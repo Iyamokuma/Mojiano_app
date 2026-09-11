@@ -7,7 +7,13 @@ function methodOf(init?: RequestInit) {
 }
 
 function shouldCache(path: string, init?: RequestInit) {
-  return methodOf(init) === "GET" && path.startsWith("/api/admin") && !path.startsWith("/api/admin/auth/");
+  if (methodOf(init) !== "GET") return false;
+  if (path.startsWith("/api/admin/auth")) return false;
+  if (path.startsWith("/api/admin")) return true;
+  if (path.startsWith("/api/home")) return true;
+  if (path.startsWith("/api/products")) return true;
+  if (path.startsWith("/api/categories")) return true;
+  return false;
 }
 
 export function peekApi<T>(path: string): T | undefined {

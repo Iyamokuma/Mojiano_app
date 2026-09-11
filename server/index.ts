@@ -20,7 +20,7 @@ import {
 import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../src/lib/validations";
 import { rateLimit } from "../src/lib/rate-limit";
 import { slugify } from "../src/lib/utils";
-import { productImageUpload } from "./upload";
+import { productImageUpload, UPLOAD_DIR } from "./upload";
 import { createStripeCheckoutSession, getStripe, markOrderPaidFromSession, stripeEnabled } from "./stripe";
 
 const app = express();
@@ -132,7 +132,10 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
 });
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
+app.use("/uploads/products", express.static(UPLOAD_DIR));
+app.use("/api/uploads/products", express.static(UPLOAD_DIR));
 app.use("/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
+app.use("/api/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.path.startsWith("/api/admin") && !req.path.startsWith("/api/admin/auth")) {
     res.on("finish", () => {
@@ -172,6 +175,10 @@ function cookieOptions() {
   };
 }
 
+function publicCache(res: express.Response, seconds = 45) {
+  res.set("Cache-Control", `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 6}`);
+}
+
 function setAuthCookie(res: express.Response, user: { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN" }) {
   res.cookie(CUSTOMER_COOKIE, signUser(user), cookieOptions());
 }
@@ -181,63 +188,88 @@ function setStaffCookie(res: express.Response, user: { id: string; email: string
 }
 
 app.get("/api/bootstrap", async (req, res) => {
-  const [site, categories, cart] = await Promise.all([
-    settings(),
-    getVisibleCategories(),
-    getCart(req),
-  ]);
-  const summary = summariseCart(cart);
-  res.json({
-    settings: site,
-    categories,
-    user: readUser(req),
-    cart: { count: summary.count, subtotal: summary.subtotal },
-  });
+  try {
+    const [site, categories, cart] = await Promise.all([
+      settings(),
+      getVisibleCategories(),
+      getCart(req),
+    ]);
+    const summary = summariseCart(cart);
+    res.set("Cache-Control", "private, no-store");
+    res.json({
+      settings: site,
+      categories,
+      user: readUser(req),
+      cart: { count: summary.count, subtotal: summary.subtotal },
+    });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Shop unavailable." });
+  }
 });
 
 app.get("/api/home", async (_req, res) => {
-  const [site, categories, collections, content] = await Promise.all([
-    settings(),
-    getVisibleCategories(),
-    getHomeCollections(),
-    prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
-  ]);
-  res.json({ settings: site, categories, collections, content });
+  try {
+    const [site, categories, collections, content] = await Promise.all([
+      settings(),
+      getVisibleCategories(),
+      getHomeCollections(),
+      prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
+    ]);
+    publicCache(res);
+    res.json({ settings: site, categories, collections, content });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Catalogue unavailable." });
+  }
 });
 
 app.get("/api/products", async (req, res) => {
-  const q = String(req.query.q ?? "");
-  const result = await queryProducts({
-    q: q || undefined,
-    categorySlug: String(req.query.category ?? "") || undefined,
-    minPrice: req.query.minPrice ? Number(req.query.minPrice) * 100 : undefined,
-    maxPrice: req.query.maxPrice ? Number(req.query.maxPrice) * 100 : undefined,
-    inStock: String(req.query.availability ?? "").split(",").includes("in") || req.query.inStock === "1",
-    outOfStock: String(req.query.availability ?? "").split(",").includes("out"),
-    clearance: req.query.clearance === "1",
-    sort: String(req.query.sort ?? "newest"),
-    page: Number(req.query.page ?? 1),
-  });
-  res.json(result);
+  try {
+    const q = String(req.query.q ?? "");
+    const result = await queryProducts({
+      q: q || undefined,
+      categorySlug: String(req.query.category ?? "") || undefined,
+      minPrice: req.query.minPrice ? Number(req.query.minPrice) * 100 : undefined,
+      maxPrice: req.query.maxPrice ? Number(req.query.maxPrice) * 100 : undefined,
+      inStock: String(req.query.availability ?? "").split(",").includes("in") || req.query.inStock === "1",
+      outOfStock: String(req.query.availability ?? "").split(",").includes("out"),
+      clearance: req.query.clearance === "1",
+      sort: String(req.query.sort ?? "newest"),
+      page: Number(req.query.page ?? 1),
+    });
+    publicCache(res, 30);
+    res.json(result);
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Catalogue unavailable." });
+  }
 });
 
 app.get("/api/categories/:slug", async (req, res) => {
-  const category = await getCategoryBySlug(param(req.params.slug));
-  if (!category) {
-    res.status(404).json({ error: "Category not found." });
-    return;
+  try {
+    const category = await getCategoryBySlug(param(req.params.slug));
+    if (!category) {
+      res.status(404).json({ error: "Category not found." });
+      return;
+    }
+    publicCache(res);
+    res.json(category);
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Category unavailable." });
   }
-  res.json(category);
 });
 
 app.get("/api/products/:slug", async (req, res) => {
-  const product = await getProductBySlug(param(req.params.slug));
-  if (!product) {
-    res.status(404).json({ error: "Product not found." });
-    return;
+  try {
+    const product = await getProductBySlug(param(req.params.slug));
+    if (!product) {
+      res.status(404).json({ error: "Product not found." });
+      return;
+    }
+    const related = await getRelatedProducts(product.id, product.categoryId);
+    publicCache(res, 60);
+    res.json({ product, related });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Product unavailable." });
   }
-  const related = await getRelatedProducts(product.id, product.categoryId);
-  res.json({ product, related });
 });
 
 app.get("/api/cart", async (req, res) => {
@@ -1192,7 +1224,13 @@ app.put("/api/admin/settings", requireAdmin, async (req, res) => {
   res.json(site);
 });
 
-if (isProd) {
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: err instanceof Error ? err.message : "Server error." });
+});
+
+if (isProd && !process.env.VERCEL) {
   const dist = path.join(process.cwd(), "dist");
   app.use(express.static(dist));
   app.get(/.*/, (_req, res) => {
@@ -1200,6 +1238,10 @@ if (isProd) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Mojiano API on http://localhost:${PORT}`);
-});
+export { app };
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Mojiano API on http://localhost:${PORT}`);
+  });
+}

@@ -6,7 +6,10 @@ function datasourceUrl() {
   const raw = process.env.DATABASE_URL ?? "";
   try {
     const url = new URL(raw);
-    if (!url.searchParams.has("connection_limit")) url.searchParams.set("connection_limit", "10");
+    const serverless = Boolean(process.env.VERCEL);
+    if (!url.searchParams.has("connection_limit")) {
+      url.searchParams.set("connection_limit", serverless ? "1" : "10");
+    }
     if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "20");
     return url.toString();
   } catch {
@@ -21,4 +24,4 @@ export const prisma =
     datasources: { db: { url: datasourceUrl() } },
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production" || process.env.VERCEL) globalForPrisma.prisma = prisma;

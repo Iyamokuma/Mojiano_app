@@ -12,7 +12,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Label, Select, Textarea, FieldError } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/feedback";
 import { useShop } from "@/context/shop";
-import { api } from "@/lib/api";
+import { api, peekApi } from "@/lib/api";
 import { formatGBP } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { AdminAuthLayout } from "@/context/admin";
@@ -50,12 +50,27 @@ function HomePage() {
     content: { id: string; key: string; title: string; body: string; image: string | null; ctaLabel: string; ctaHref: string }[];
     categories: { id: string; name: string; slug: string; image: string | null }[];
     collections: { featured: ProductCardData[]; newArrivals: ProductCardData[]; bestSellers: ProductCardData[] };
-  } | null>(null);
+  } | null>(() => peekApi("/api/home") ?? null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    void api<typeof data>("/api/home").then(setData);
+    void api<NonNullable<typeof data>>("/api/home")
+      .then((next) => {
+        setFailed(false);
+        setData(next);
+      })
+      .catch(() => setFailed(true));
   }, []);
 
+  if (failed && !data) {
+    return (
+      <EmptyState
+        title="The shop is waking up"
+        description="The catalogue could not load. Refresh in a moment."
+        action={<button type="button" className={buttonVariants()} onClick={() => window.location.reload()}>Refresh</button>}
+      />
+    );
+  }
   if (!data) return <div className="container-page py-24 text-muted">Loading…</div>;
   const hero = data.content.find((block) => block.key === "hero");
 
@@ -87,19 +102,46 @@ function HomePage() {
 
 function CatalogPage({ title, categorySlug }: { title?: string; categorySlug?: string }) {
   const [params] = useSearchParams();
+  const query = new URLSearchParams(params);
+  if (categorySlug) query.set("category", categorySlug);
+  const path = `/api/products?${query.toString()}`;
   const [result, setResult] = useState<{
     products: ProductCardData[];
     total: number;
     facets: CatalogFacets;
-  } | null>(null);
+  } | null>(() => peekApi(path) ?? null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const query = new URLSearchParams(params);
-    if (categorySlug) query.set("category", categorySlug);
-    void api<NonNullable<typeof result>>(`/api/products?${query.toString()}`).then(setResult);
+    const nextQuery = new URLSearchParams(params);
+    if (categorySlug) nextQuery.set("category", categorySlug);
+    const nextPath = `/api/products?${nextQuery.toString()}`;
+    const cached = peekApi<NonNullable<typeof result>>(nextPath);
+    if (cached) {
+      setResult(cached);
+      setFailed(false);
+    } else {
+      setResult(null);
+    }
+    void api<NonNullable<typeof result>>(nextPath)
+      .then((data) => {
+        setFailed(false);
+        setResult(data);
+      })
+      .catch(() => setFailed(true));
   }, [params, categorySlug]);
 
   const heading = title ?? (params.get("q") ? `Results for “${params.get("q")}”` : "All products");
+
+  if (failed && !result) {
+    return (
+      <EmptyState
+        title="The shop is waking up"
+        description="The catalogue could not load. Refresh in a moment."
+        action={<button type="button" className={buttonVariants()} onClick={() => window.location.reload()}>Refresh</button>}
+      />
+    );
+  }
 
   if (!result) return <div className="container-page py-24 text-muted">Loading…</div>;
 

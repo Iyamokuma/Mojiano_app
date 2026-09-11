@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
@@ -62,16 +62,26 @@ function ArchMedia({
   slug,
   fallbackImage,
   name,
+  priority = false,
 }: {
   slug: string;
   fallbackImage: string | null;
   name: string;
+  priority?: boolean;
 }) {
   const media = HERO_MEDIA[slug];
   const poster = media?.image || fallbackImage || "";
   const video = media?.video;
+  const [playVideo, setPlayVideo] = useState(false);
 
-  if (video) {
+  useEffect(() => {
+    if (!video) return;
+    const wide = window.matchMedia("(min-width: 640px)").matches;
+    const motionOk = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (wide && motionOk) setPlayVideo(true);
+  }, [video]);
+
+  if (video && playVideo) {
     return (
       <video
         className="absolute inset-0 h-full w-full object-cover object-center transition duration-700 group-hover:scale-[1.04]"
@@ -81,7 +91,8 @@ function ArchMedia({
         muted
         loop
         playsInline
-        preload="metadata"
+        preload="none"
+        onError={() => setPlayVideo(false)}
         aria-hidden
       />
     );
@@ -91,6 +102,10 @@ function ArchMedia({
     <img
       src={poster}
       alt={name}
+      fetchPriority={priority ? "high" : "low"}
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
+      sizes="(min-width: 640px) 18vw, 20vw"
       className="absolute inset-0 h-full w-full object-cover object-top transition duration-700 group-hover:scale-[1.06]"
     />
   );
@@ -159,7 +174,12 @@ export function HomeHero({
             )}
             aria-label={`Shop ${category.name}`}
           >
-            <ArchMedia slug={category.slug} fallbackImage={category.image} name={category.name} />
+            <ArchMedia
+              slug={category.slug}
+              fallbackImage={category.image}
+              name={category.name}
+              priority={index === Math.floor(arches.length / 2)}
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-ink/55 via-transparent to-transparent opacity-80" />
             <span className="absolute inset-x-0.5 bottom-1.5 text-center font-display text-[8px] leading-tight text-white min-[400px]:text-[9px] sm:inset-x-2 sm:bottom-4 sm:text-sm md:text-lg">
               {category.name}

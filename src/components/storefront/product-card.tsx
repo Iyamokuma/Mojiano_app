@@ -36,6 +36,9 @@ export function ProductCard({ product }: { product: ProductCardData }) {
             <img
               src={image.url}
               alt={image.alt || product.name}
+              loading="lazy"
+              decoding="async"
+              sizes="(min-width: 1280px) 25vw, (min-width: 768px) 33vw, 50vw"
               className="h-full w-full rounded-2xl object-cover object-center transition duration-500 group-hover:scale-[1.03]"
             />
           ) : (

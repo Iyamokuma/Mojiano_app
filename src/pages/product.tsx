@@ -117,7 +117,13 @@ export function ProductPage() {
           <div className="relative overflow-hidden rounded-[1.75rem] bg-canvas-warm">
             <div className="aspect-square">
               {main ? (
-                <img src={main.url} alt={main.alt || product.name} className="h-full w-full object-contain p-4 sm:p-8" />
+                <img
+                  src={main.url}
+                  alt={main.alt || product.name}
+                  fetchPriority="high"
+                  decoding="async"
+                  className="h-full w-full object-contain p-4 sm:p-8"
+                />
               ) : (
                 <div className="grid h-full place-items-center text-sm text-muted">No image yet</div>
               )}

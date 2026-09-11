@@ -8,6 +8,7 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "prisma generate && vite build",
+    "postinstall": "prisma generate",
     "start": "NODE_ENV=production tsx server/index.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
@@ -35,6 +36,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.3",
+    "serverless-http": "^4.0.0",
     "stripe": "^22.6.2",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.6.0"

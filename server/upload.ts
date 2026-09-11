@@ -4,11 +4,17 @@ import multer from "multer";
 import { customAlphabet } from "nanoid";
 
 const id = customAlphabet("abcdefghijkmnopqrstuvwxyz23456789", 10);
-export const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "products");
+export const UPLOAD_DIR = process.env.VERCEL
+  ? path.join("/tmp", "uploads", "products")
+  : path.join(process.cwd(), "public", "uploads", "products");
 
 const ALLOWED = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+try {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+} catch {
+  // Vercel’s filesystem is read-only outside /tmp.
+}
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),

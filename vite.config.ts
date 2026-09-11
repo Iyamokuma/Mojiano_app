@@ -11,6 +11,21 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(rootDir, "src") },
   },
+  build: {
+    target: "es2022",
+    cssMinify: true,
+    modulePreload: { polyfill: false },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/react-router") || id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) {
+            return "react";
+          }
+          if (id.includes("node_modules/lucide-react")) return "icons";
+        },
+      },
+    },
+  },
   server: {
     port: 3002,
     proxy: {
