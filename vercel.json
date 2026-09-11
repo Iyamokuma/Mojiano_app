@@ -1,12 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "prisma generate && vite build",
+  "buildCommand": "prisma generate && node scripts/bundle-api.mjs && vite build",
   "outputDirectory": "dist",
   "regions": ["lhr1"],
   "functions": {
-    "api/[[...path]].ts": {
-      "maxDuration": 30
+    "api/[[...path]].js": {
+      "maxDuration": 30,
+      "includeFiles": "{api/_app.js,node_modules/.prisma/client/**}"
     }
   },
   "rewrites": [
