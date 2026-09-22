@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   HERO_WAREHOUSE_VIDEO,
@@ -14,27 +14,13 @@ export type HeroArchCategory = {
   image: string | null;
 };
 
-/** Desktop/tablet (md+): five arches with one continuous masked video. */
-const ARCH_HEIGHT = [
-  "h-[18rem] lg:h-[21.5rem]",
-  "h-[22rem] lg:h-[26rem]",
-  "h-[26rem] lg:h-[31rem]",
-  "h-[22rem] lg:h-[26rem]",
-  "h-[18rem] lg:h-[21.5rem]",
-];
+/** Width / height per arch, so the row scales proportionally on every screen size. */
+const ARCH_ASPECT = ["16 / 21.5", "16 / 26", "16 / 31", "16 / 26", "16 / 21.5"];
 
-const ARCH_WIDTH = "min-w-0 max-w-[13.5rem] lg:max-w-[16rem]";
-
-/** SVG mask path matching Tailwind `rounded-t-full` arch windows. */
-function archMaskPath(x: number, y: number, w: number, h: number) {
+/** Path for a `rounded-t-full` arch window. */
+function archPath(x: number, y: number, w: number, h: number) {
   const r = Math.min(w / 2, h);
-  return [
-    `M ${x} ${y + h}`,
-    `L ${x} ${y + r}`,
-    `A ${r} ${r} 0 0 1 ${x + w} ${y + r}`,
-    `L ${x + w} ${y + h}`,
-    "Z",
-  ].join(" ");
+  return `M ${x} ${y + h} L ${x} ${y + r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} L ${x + w} ${y + h} Z`;
 }
 
 type HeroArchRowProps = {
@@ -43,32 +29,25 @@ type HeroArchRowProps = {
 };
 
 export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
-  const maskId = useId().replace(/:/g, "");
   const rowRef = useRef<HTMLDivElement>(null);
   const archRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [videoOk, setVideoOk] = useState(true);
   const [motionOk, setMotionOk] = useState(true);
-  const [mask, setMask] = useState<{ width: number; height: number; paths: string[] } | null>(null);
+  const [clip, setClip] = useState<{ width: number; height: number; path: string } | null>(null);
 
-  const measureMask = useCallback(() => {
+  const measure = useCallback(() => {
     const row = rowRef.current;
     if (!row) return;
     const rowRect = row.getBoundingClientRect();
     if (rowRect.width < 1 || rowRect.height < 1) return;
 
-    const paths = archRefs.current
-      .map((el) => {
-        if (!el) return "";
-        const r = el.getBoundingClientRect();
-        const x = r.left - rowRect.left;
-        const y = r.top - rowRect.top;
-        return archMaskPath(x, y, r.width, r.height);
-      })
-      .filter(Boolean);
-
-    if (paths.length === arches.length) {
-      setMask({ width: rowRect.width, height: rowRect.height, paths });
+    const paths: string[] = [];
+    for (const el of archRefs.current.slice(0, arches.length)) {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      paths.push(archPath(r.left - rowRect.left, r.top - rowRect.top, r.width, r.height));
     }
+    setClip({ width: rowRect.width, height: rowRect.height, path: paths.join(" ") });
   }, [arches.length]);
 
   useEffect(() => {
@@ -80,81 +59,51 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
   }, []);
 
   useEffect(() => {
-    measureMask();
+    measure();
     const row = rowRef.current;
     if (!row) return;
-
-    const ro = new ResizeObserver(() => measureMask());
+    const ro = new ResizeObserver(() => measure());
     ro.observe(row);
     for (const el of archRefs.current) {
       if (el) ro.observe(el);
     }
-
-    window.addEventListener("resize", measureMask);
+    window.addEventListener("resize", measure);
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", measureMask);
+      window.removeEventListener("resize", measure);
     };
-  }, [measureMask, arches]);
+  }, [measure, arches]);
 
-  const showVideo = videoOk && motionOk;
-  const videoMasked = showVideo && mask !== null;
+  const showVideo = videoOk && motionOk && clip !== null;
 
   return (
-    <div className="mt-8 w-full md:mt-10">
-      <div className="mx-auto w-full max-w-[76rem] px-6 md:px-8">
+    <div className="mt-6 w-full sm:mt-8 md:mt-10">
+      <div className="mx-auto w-full max-w-[76rem] px-2 min-[400px]:px-3 sm:px-6 md:px-8">
         <div
           ref={rowRef}
-          className="relative flex w-full items-end justify-center gap-3 md:gap-4"
+          className="relative flex w-full items-end justify-center gap-1 min-[400px]:gap-1.5 sm:gap-3 md:gap-4"
         >
-          {videoMasked ? (
-            <>
-              <svg
-                className="pointer-events-none absolute h-0 w-0 overflow-hidden"
-                aria-hidden
-                focusable="false"
-              >
-                <defs>
-                  <mask
-                    id={maskId}
-                    maskUnits="userSpaceOnUse"
-                    x="0"
-                    y="0"
-                    width={mask.width}
-                    height={mask.height}
-                  >
-                    <rect width={mask.width} height={mask.height} fill="black" />
-                    {mask.paths.map((d, i) => (
-                      <path key={i} d={d} fill="white" />
-                    ))}
-                  </mask>
-                </defs>
-              </svg>
-              <video
-                className="pointer-events-none absolute left-0 top-0 z-0 object-cover object-center"
-                style={{
-                  width: mask.width,
-                  height: mask.height,
-                  WebkitMaskImage: `url(#${maskId})`,
-                  maskImage: `url(#${maskId})`,
-                  WebkitMaskSize: `${mask.width}px ${mask.height}px`,
-                  maskSize: `${mask.width}px ${mask.height}px`,
-                  WebkitMaskRepeat: "no-repeat",
-                  maskRepeat: "no-repeat",
-                }}
-                src={HERO_WAREHOUSE_VIDEO}
-                poster={HERO_WAREHOUSE_VIDEO_POSTER}
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                aria-hidden
-                tabIndex={-1}
-                onError={() => setVideoOk(false)}
-                onLoadedData={measureMask}
-              />
-            </>
+          {showVideo ? (
+            <video
+              className="pointer-events-none absolute left-0 top-0 z-0 object-cover object-center"
+              style={{
+                width: clip.width,
+                height: clip.height,
+                clipPath: `path('${clip.path}')`,
+                WebkitClipPath: `path('${clip.path}')`,
+              }}
+              src={HERO_WAREHOUSE_VIDEO}
+              poster={HERO_WAREHOUSE_VIDEO_POSTER}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              aria-hidden
+              tabIndex={-1}
+              onError={() => setVideoOk(false)}
+              onLoadedData={measure}
+            />
           ) : null}
 
           {arches.map((category, index) => {
@@ -165,11 +114,8 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
                 ref={(el) => {
                   archRefs.current[index] = el;
                 }}
-                className={cn(
-                  "relative min-w-0 flex-1",
-                  ARCH_HEIGHT[index] ?? ARCH_HEIGHT[2],
-                  ARCH_WIDTH,
-                )}
+                className="relative min-w-0 max-w-[16rem] flex-1"
+                style={{ aspectRatio: ARCH_ASPECT[index] ?? ARCH_ASPECT[2] }}
               >
                 <Link
                   data-slug={category.slug}
@@ -180,13 +126,14 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
                   onBlur={() => onSpotlight(null)}
                   className={cn(
                     "group relative z-[1] block h-full w-full overflow-hidden rounded-t-full",
-                    "bg-canvas-warm/40 transition duration-500 ease-out",
+                    showVideo ? "bg-transparent" : "bg-canvas-warm/40",
+                    "transition duration-500 ease-out",
                     "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_rgba(28,20,16,0.55)]",
                     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold",
                   )}
                   aria-label={`Shop ${category.name}`}
                 >
-                  {!videoMasked && poster ? (
+                  {!showVideo && poster ? (
                     <img
                       src={poster}
                       alt=""
@@ -200,7 +147,7 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
                     className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/15 to-transparent"
                     aria-hidden
                   />
-                  <span className="pointer-events-none absolute inset-x-2 bottom-4 z-[2] text-center font-display text-sm text-white drop-shadow-sm md:text-lg">
+                  <span className="pointer-events-none absolute inset-x-0.5 bottom-1.5 z-[2] text-center font-display text-[7px] leading-tight text-white drop-shadow-sm min-[400px]:text-[8px] sm:inset-x-2 sm:bottom-4 sm:text-sm md:text-lg">
                     {category.name}
                   </span>
                 </Link>
