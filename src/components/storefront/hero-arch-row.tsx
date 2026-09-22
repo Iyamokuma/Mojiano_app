@@ -33,6 +33,7 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
   const archRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [videoOk, setVideoOk] = useState(true);
   const [motionOk, setMotionOk] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [clip, setClip] = useState<{ width: number; height: number; path: string } | null>(null);
 
   const measure = useCallback(() => {
@@ -103,6 +104,7 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
               tabIndex={-1}
               onError={() => setVideoOk(false)}
               onLoadedData={measure}
+              onPlaying={() => setPlaying(true)}
             />
           ) : null}
 
@@ -126,14 +128,14 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
                   onBlur={() => onSpotlight(null)}
                   className={cn(
                     "group relative z-[1] block h-full w-full overflow-hidden rounded-t-full",
-                    showVideo ? "bg-transparent" : "bg-canvas-warm/40",
+                    showVideo && playing ? "bg-transparent" : "bg-canvas-warm/40",
                     "transition duration-500 ease-out",
                     "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_rgba(28,20,16,0.55)]",
                     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold",
                   )}
                   aria-label={`Shop ${category.name}`}
                 >
-                  {!showVideo && poster ? (
+                  {!(showVideo && playing) && poster ? (
                     <img
                       src={poster}
                       alt=""
