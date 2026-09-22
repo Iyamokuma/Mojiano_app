@@ -1,19 +1,16 @@
 const cache = new Map<string, { at: number; data: unknown }>();
 const inflight = new Map<string, Promise<unknown>>();
-const FRESH_MS = 45_000;
+/** Admin list views only — storefront always hits the network for fresh catalogue data. */
+const ADMIN_FRESH_MS = 20_000;
 
 function methodOf(init?: RequestInit) {
   return (init?.method ?? "GET").toUpperCase();
 }
 
-function shouldCache(path: string, init?: RequestInit) {
+function shouldCacheAdmin(path: string, init?: RequestInit) {
   if (methodOf(init) !== "GET") return false;
   if (path.startsWith("/api/admin/auth")) return false;
-  if (path.startsWith("/api/admin")) return true;
-  if (path.startsWith("/api/home")) return true;
-  if (path.startsWith("/api/products")) return true;
-  if (path.startsWith("/api/categories")) return true;
-  return false;
+  return path.startsWith("/api/admin");
 }
 
 export function peekApi<T>(path: string): T | undefined {
@@ -39,6 +36,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers, ...rest } = init ?? {};
   const res = await fetch(path, {
     credentials: "include",
+    cache: path.startsWith("/api/") && !path.startsWith("/api/admin") ? "no-store" : undefined,
     headers: {
       "Content-Type": "application/json",
       ...(headers ?? {}),
@@ -69,9 +67,9 @@ function refresh<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  if (shouldCache(path, init)) {
+  if (shouldCacheAdmin(path, init)) {
     const cached = cache.get(path);
-    const fresh = cached && Date.now() - cached.at < FRESH_MS;
+    const fresh = cached && Date.now() - cached.at < ADMIN_FRESH_MS;
     if (cached && fresh) return cached.data as T;
     if (cached) {
       void refresh<T>(path, init);
@@ -81,6 +79,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const data = await send<T>(path, init);
+  if (methodOf(init) === "GET" && path.startsWith("/api/") && !path.startsWith("/api/admin")) {
+    cache.set(path, { at: Date.now(), data });
+  }
   if (methodOf(init) !== "GET" && path.startsWith("/api/admin")) {
     if (path.startsWith("/api/admin/auth/")) clearApiCache();
     else invalidateApiCache();

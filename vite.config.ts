@@ -6,8 +6,28 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
+const appBuildId =
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
+  process.env.GITHUB_SHA?.slice(0, 12) ||
+  `dev-${Date.now()}`;
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  define: {
+    __APP_BUILD_ID__: JSON.stringify(appBuildId),
+  },
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: "inject-mojiano-build-id",
+      transformIndexHtml(html) {
+        return html.replace(
+          "</head>",
+          `    <meta name="mojiano-build" content="${appBuildId}" />\n  </head>`,
+        );
+      },
+    },
+  ],
   resolve: {
     alias: { "@": path.resolve(rootDir, "src") },
   },

@@ -21,8 +21,31 @@ const ShopContext = createContext<ShopState | null>(null);
 
 const CATS_KEY = "mj-categories";
 const SETTINGS_KEY = "mj-settings";
+const BUILD_KEY = "mj-build-id";
+
+function sessionMatchesBuild(): boolean {
+  try {
+    if (typeof sessionStorage === "undefined") return false;
+    return sessionStorage.getItem(BUILD_KEY) === __APP_BUILD_ID__;
+  } catch {
+    return false;
+  }
+}
+
+function syncSessionBuildId() {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    if (sessionStorage.getItem(BUILD_KEY) === __APP_BUILD_ID__) return;
+    sessionStorage.removeItem(CATS_KEY);
+    sessionStorage.removeItem(SETTINGS_KEY);
+    sessionStorage.setItem(BUILD_KEY, __APP_BUILD_ID__);
+  } catch {
+    /* private mode */
+  }
+}
 
 function readCachedCategories(): ShopCategory[] {
+  if (!sessionMatchesBuild()) return [];
   try {
     if (typeof sessionStorage === "undefined") return [];
     const raw = sessionStorage.getItem(CATS_KEY);
@@ -39,6 +62,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   const [cartCount, setCartCount] = useState(0);
   const [cardPayments, setCardPayments] = useState(false);
   const [settings, setSettings] = useState<Record<string, string | number | boolean | null>>(() => {
+    if (!sessionMatchesBuild()) return {};
     try {
       const raw = sessionStorage.getItem(SETTINGS_KEY);
       return raw ? (JSON.parse(raw) as Record<string, string | number | boolean | null>) : {};
@@ -76,6 +100,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    syncSessionBuildId();
     prefetchApi("/api/home");
     if (window.location.pathname.startsWith("/admin")) {
       setReady(true);

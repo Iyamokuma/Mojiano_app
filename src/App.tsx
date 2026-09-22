@@ -6,6 +6,7 @@ import { WhatsAppButton } from "@/components/storefront/whatsapp-button";
 import { ProductGrid, type ProductCardData } from "@/components/storefront/product-card";
 import { CatalogLayout, type CatalogFacets } from "@/components/storefront/catalog-layout";
 import { Logo } from "@/components/brand/logo";
+import { DeployRefreshBanner } from "@/components/storefront/deploy-refresh";
 import { HomeHero } from "@/components/storefront/hero";
 import { CategoryCatalog } from "@/components/storefront/category-catalog";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -488,6 +489,8 @@ function NotFoundPage() {
 
 export function App() {
   return (
+    <>
+    <DeployRefreshBanner />
     <Suspense fallback={<div className="container-page py-24 text-muted">Loading…</div>}>
     <Routes>
       <Route element={<AdminAuthLayout />}>
@@ -511,5 +514,6 @@ export function App() {
       </Route>
     </Routes>
     </Suspense>
+    </>
   );
 }

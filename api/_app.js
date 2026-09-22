@@ -936,8 +936,13 @@ async function remember(key, ttlMs, load) {
   shopMemo.set(key, { at: Date.now(), value });
   return value;
 }
+function storefrontNoStore(res) {
+  res.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+  res.set("CDN-Cache-Control", "no-store");
+  res.set("Vercel-CDN-Cache-Control", "no-store");
+}
 async function settings() {
-  return remember("settings", 2e4, async () => {
+  return remember("settings", 3e3, async () => {
     return await prisma.siteSettings.findUnique({ where: { id: "default" } }) ?? await prisma.siteSettings.create({ data: { id: "default" } });
   });
 }
@@ -949,9 +954,6 @@ function cookieOptions() {
     path: "/",
     maxAge: 1e3 * 60 * 60 * 24 * 14
   };
-}
-function publicCache(res, seconds = 60) {
-  res.set("Cache-Control", `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 8}`);
 }
 function setAuthCookie(req, res, user) {
   const token = signUser(user);
@@ -965,7 +967,7 @@ app.get("/api/bootstrap", async (req, res) => {
   try {
     const [site, categories, cart] = await Promise.all([
       settings(),
-      remember("categories", 2e4, getVisibleCategories),
+      remember("categories", 3e3, getVisibleCategories),
       getCart(req)
     ]);
     const summary = summariseCart(cart);
@@ -983,16 +985,16 @@ app.get("/api/bootstrap", async (req, res) => {
 });
 app.get("/api/home", async (_req, res) => {
   try {
-    const payload = await remember("home", 25e3, async () => {
+    const payload = await remember("home", 3e3, async () => {
       const [site, categories, collections, content] = await Promise.all([
         settings(),
-        remember("categories", 2e4, getVisibleCategories),
+        remember("categories", 3e3, getVisibleCategories),
         getHomeCollections(),
         prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } })
       ]);
       return { settings: site, categories, collections, content };
     });
-    publicCache(res, 90);
+    storefrontNoStore(res);
     res.json(payload);
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Catalogue unavailable." });
@@ -1012,7 +1014,7 @@ app.get("/api/products", async (req, res) => {
       sort: String(req.query.sort ?? "newest"),
       page: Number(req.query.page ?? 1)
     });
-    publicCache(res, 30);
+    storefrontNoStore(res);
     res.json(result);
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Catalogue unavailable." });
@@ -1025,7 +1027,7 @@ app.get("/api/categories/:slug", async (req, res) => {
       res.status(404).json({ error: "Category not found." });
       return;
     }
-    publicCache(res);
+    storefrontNoStore(res);
     res.json(category);
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Category unavailable." });
@@ -1039,7 +1041,7 @@ app.get("/api/products/:slug", async (req, res) => {
       return;
     }
     const related = await getRelatedProducts(product.id, product.categoryId);
-    publicCache(res, 60);
+    storefrontNoStore(res);
     res.json({ product, related });
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Product unavailable." });
