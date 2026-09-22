@@ -14,16 +14,16 @@ export type HeroArchCategory = {
   image: string | null;
 };
 
+/** Desktop/tablet (md+): five arches with one continuous masked video. */
 const ARCH_HEIGHT = [
-  "h-[8rem] min-[400px]:h-[9.5rem] sm:h-[18rem] lg:h-[21.5rem]",
-  "h-[9.25rem] min-[400px]:h-[11rem] sm:h-[22rem] lg:h-[26rem]",
-  "h-[11rem] min-[400px]:h-[13rem] sm:h-[26rem] lg:h-[31rem]",
-  "h-[9.25rem] min-[400px]:h-[11rem] sm:h-[22rem] lg:h-[26rem]",
-  "h-[8rem] min-[400px]:h-[9.5rem] sm:h-[18rem] lg:h-[21.5rem]",
+  "h-[18rem] lg:h-[21.5rem]",
+  "h-[22rem] lg:h-[26rem]",
+  "h-[26rem] lg:h-[31rem]",
+  "h-[22rem] lg:h-[26rem]",
+  "h-[18rem] lg:h-[21.5rem]",
 ];
 
-const ARCH_WIDTH =
-  "min-w-[4.25rem] max-w-[4.6rem] min-[400px]:max-w-[5.4rem] sm:min-w-0 sm:max-w-[13.5rem] lg:max-w-[16rem]";
+const ARCH_WIDTH = "min-w-0 max-w-[13.5rem] lg:max-w-[16rem]";
 
 /** SVG mask path matching Tailwind `rounded-t-full` arch windows. */
 function archMaskPath(x: number, y: number, w: number, h: number) {
@@ -101,20 +101,11 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
   const videoMasked = showVideo && mask !== null;
 
   return (
-    <div className="mt-6 w-full sm:mt-10">
-      <div
-        className={cn(
-          "mx-auto w-full max-w-[76rem]",
-          "overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:overflow-visible sm:pb-0",
-          "[&::-webkit-scrollbar]:hidden",
-        )}
-      >
+    <div className="mt-8 w-full md:mt-10">
+      <div className="mx-auto w-full max-w-[76rem] px-6 md:px-8">
         <div
           ref={rowRef}
-          className={cn(
-            "relative flex min-w-[min(100%,38rem)] items-end justify-center gap-1 px-2 sm:min-w-0 sm:w-full sm:gap-3 sm:px-6 md:gap-4 md:px-8 lg:px-8",
-            "snap-x snap-mandatory sm:snap-none",
-          )}
+          className="relative flex w-full items-end justify-center gap-3 md:gap-4"
         >
           {videoMasked ? (
             <>
@@ -175,7 +166,7 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
                   archRefs.current[index] = el;
                 }}
                 className={cn(
-                  "relative min-w-0 flex-1 snap-center",
+                  "relative min-w-0 flex-1",
                   ARCH_HEIGHT[index] ?? ARCH_HEIGHT[2],
                   ARCH_WIDTH,
                 )}
@@ -209,7 +200,7 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
                     className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/15 to-transparent"
                     aria-hidden
                   />
-                  <span className="pointer-events-none absolute inset-x-0.5 bottom-1.5 z-[2] text-center font-display text-[8px] leading-tight text-white drop-shadow-sm min-[400px]:text-[9px] sm:inset-x-2 sm:bottom-4 sm:text-sm md:text-lg">
+                  <span className="pointer-events-none absolute inset-x-2 bottom-4 z-[2] text-center font-display text-sm text-white drop-shadow-sm md:text-lg">
                     {category.name}
                   </span>
                 </Link>

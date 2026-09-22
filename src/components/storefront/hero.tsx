@@ -6,6 +6,7 @@ import { useShop } from "@/context/shop";
 import { HERO_FEATURED_CATEGORY_SLUGS } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { HeroArchRow, type HeroArchCategory } from "@/components/storefront/hero-arch-row";
+import { HeroMobile } from "@/components/storefront/hero-mobile";
 
 function pickHeroCategories(categories: HeroArchCategory[]) {
   const featured = HERO_FEATURED_CATEGORY_SLUGS.map((slug) =>
@@ -65,10 +66,17 @@ export function HomeHero({
         </Link>
       </div>
 
-      <HeroArchRow
+      <HeroMobile
         arches={arches}
+        centerSlug={centerSlug}
         onSpotlight={(slug) => setSpotlight(slug === null ? centerSlug : slug)}
       />
+      <div className="hidden md:block">
+        <HeroArchRow
+          arches={arches}
+          onSpotlight={(slug) => setSpotlight(slug === null ? centerSlug : slug)}
+        />
+      </div>
     </section>
   );
 }
