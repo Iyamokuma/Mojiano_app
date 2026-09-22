@@ -28,7 +28,7 @@
     background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    text-rendering: optimizeLegibility;
+    text-rendering: optimizeSpeed;
   }
   ::selection { background: var(--color-peach); color: var(--color-ink); }
   :focus-visible { outline: 2px solid var(--color-gold); outline-offset: 3px; }

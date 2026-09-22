@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/feedback";
 import { useShop } from "@/context/shop";
 import { api } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { discountPercent, effectivePrice, formatGBP } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -63,7 +64,7 @@ export function ProductPage() {
       : effectivePrice(product)
     : 0;
   const save = product ? discountPercent(price, product.compareAtPrice) : null;
-  const images = product?.images ?? [];
+  const images = (product?.images ?? []).map((image) => ({ ...image, url: resolveImageUrl(image.url) }));
   const main = images[activeImage] ?? images[0];
   const wa = product ? waLink(settings.whatsappNumber, `Hello Mojiano, I would like to ask about ${product.name}.`) : null;
 

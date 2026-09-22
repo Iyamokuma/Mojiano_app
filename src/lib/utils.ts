@@ -23,6 +23,13 @@ export function formatDate(date: Date | string) {
   }).format(new Date(date));
 }
 
+export function safeNextPath(value: string | null | undefined, fallback = "/account") {
+  if (!value) return fallback;
+  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return fallback;
+  if (value.startsWith("/admin")) return fallback;
+  return value;
+}
+
 export function siteUrl(path = "") {
   const base = (process.env.VITE_SITE_URL ?? process.env.SITE_URL ?? "http://localhost:3002").replace(/\/$/, "");
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;

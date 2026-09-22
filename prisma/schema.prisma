@@ -379,9 +379,9 @@ model SiteSettings {
   instagramUrl       String  @default("")
   facebookUrl        String  @default("")
   bankDetails        String  @default("")
-  standardDeliveryFee Int    @default(499)
+  standardDeliveryFee Int    @default(100)
   freeDeliveryThreshold Int  @default(7500)
-  expressDeliveryFee Int     @default(899)
+  expressDeliveryFee Int     @default(100)
 }
 
 model Notification {

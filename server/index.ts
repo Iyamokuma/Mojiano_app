@@ -8,7 +8,7 @@ import { customAlphabet } from "nanoid";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { readStaff, readUser, requireAdmin, requireUser, signUser, CUSTOMER_COOKIE, STAFF_COOKIE } from "./auth";
-import { getCart, getOrCreateCart, loadCart, summariseCart } from "./cart";
+import { claimGuestCart, getCart, getOrCreateCart, loadCart, summariseCart } from "./cart";
 import {
   getCategoryBySlug,
   getHomeCollections,
@@ -21,9 +21,17 @@ import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../s
 import { rateLimit } from "../src/lib/rate-limit";
 import { slugify } from "../src/lib/utils";
 import { productImageUpload, UPLOAD_DIR } from "./upload";
+import { sendWelcomeEmail } from "./email";
 import { createStripeCheckoutSession, getStripe, markOrderPaidFromSession, stripeEnabled } from "./stripe";
 
 const app = express();
+app.use((req, _res, next) => {
+  const forwarded = String(req.headers["x-forwarded-uri"] ?? "").split("?")[0];
+  if (forwarded.startsWith("/api/") && req.path !== forwarded) {
+    req.url = String(req.headers["x-forwarded-uri"]);
+  }
+  next();
+});
 app.get("/api/ready", (_req, res) => {
   res.json({ ok: true, ready: true });
 });
@@ -31,6 +39,7 @@ const PORT = Number(process.env.PORT ?? 4000);
 const isProd = process.env.NODE_ENV === "production";
 const orderCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 const adminGetMemo = new Map<string, { at: number; body: unknown }>();
+const shopMemo = new Map<string, { at: number; value: unknown }>();
 const ADMIN_GET_TTL = 12_000;
 
 function readAdminMemo<T>(key: string): T | undefined {
@@ -112,7 +121,7 @@ function parseVariants(body: unknown, productSku: string) {
 }
 
 app.use(cors({ origin: true, credentials: true }));
-app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+async function handleStripeWebhook(req: express.Request, res: express.Response) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
     res.status(501).json({ error: "Stripe webhook is not configured." });
@@ -132,7 +141,9 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Invalid webhook." });
   }
-});
+}
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
+app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use("/uploads/products", express.static(UPLOAD_DIR));
@@ -142,7 +153,10 @@ app.use("/api/uploads", express.static(path.join(process.cwd(), "public", "uploa
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.path.startsWith("/api/admin") && !req.path.startsWith("/api/admin/auth")) {
     res.on("finish", () => {
-      if (res.statusCode < 400) adminGetMemo.clear();
+      if (res.statusCode < 400) {
+        adminGetMemo.clear();
+        shopMemo.clear();
+      }
     });
   }
   next();
@@ -170,11 +184,21 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
+async function remember<T>(key: string, ttlMs: number, load: () => Promise<T>) {
+  const hit = shopMemo.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.value as T;
+  const value = await load();
+  shopMemo.set(key, { at: Date.now(), value });
+  return value;
+}
+
 async function settings() {
-  return (
-    (await prisma.siteSettings.findUnique({ where: { id: "default" } })) ??
-    (await prisma.siteSettings.create({ data: { id: "default" } }))
-  );
+  return remember("settings", 20_000, async () => {
+    return (
+      (await prisma.siteSettings.findUnique({ where: { id: "default" } })) ??
+      (await prisma.siteSettings.create({ data: { id: "default" } }))
+    );
+  });
 }
 
 function cookieOptions() {
@@ -187,12 +211,14 @@ function cookieOptions() {
   };
 }
 
-function publicCache(res: express.Response, seconds = 45) {
-  res.set("Cache-Control", `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 6}`);
+function publicCache(res: express.Response, seconds = 60) {
+  res.set("Cache-Control", `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 8}`);
 }
 
-function setAuthCookie(res: express.Response, user: { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN" }) {
-  res.cookie(CUSTOMER_COOKIE, signUser(user), cookieOptions());
+function setAuthCookie(req: express.Request, res: express.Response, user: { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN" }) {
+  const token = signUser(user);
+  res.cookie(CUSTOMER_COOKIE, token, cookieOptions());
+  req.cookies = { ...(req.cookies ?? {}), [CUSTOMER_COOKIE]: token };
 }
 
 function setStaffCookie(res: express.Response, user: { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN" }) {
@@ -203,7 +229,7 @@ app.get("/api/bootstrap", async (req, res) => {
   try {
     const [site, categories, cart] = await Promise.all([
       settings(),
-      getVisibleCategories(),
+      remember("categories", 20_000, getVisibleCategories),
       getCart(req),
     ]);
     const summary = summariseCart(cart);
@@ -213,6 +239,7 @@ app.get("/api/bootstrap", async (req, res) => {
       categories,
       user: readUser(req),
       cart: { count: summary.count, subtotal: summary.subtotal },
+      card: stripeEnabled(),
     });
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Shop unavailable." });
@@ -221,14 +248,17 @@ app.get("/api/bootstrap", async (req, res) => {
 
 app.get("/api/home", async (_req, res) => {
   try {
-    const [site, categories, collections, content] = await Promise.all([
-      settings(),
-      getVisibleCategories(),
-      getHomeCollections(),
-      prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
-    ]);
-    publicCache(res);
-    res.json({ settings: site, categories, collections, content });
+    const payload = await remember("home", 25_000, async () => {
+      const [site, categories, collections, content] = await Promise.all([
+        settings(),
+        remember("categories", 20_000, getVisibleCategories),
+        getHomeCollections(),
+        prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
+      ]);
+      return { settings: site, categories, collections, content };
+    });
+    publicCache(res, 90);
+    res.json(payload);
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Catalogue unavailable." });
   }
@@ -349,7 +379,7 @@ app.delete("/api/cart/:id", async (req, res) => {
   res.json(summariseCart(await loadCart(cart.id)));
 });
 
-app.post("/api/auth/register", async (req, res) => {
+async function registerCustomer(req: express.Request, res: express.Response) {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid details." });
@@ -372,11 +402,22 @@ app.post("/api/auth/register", async (req, res) => {
       role: "CUSTOMER",
     },
   });
-  setAuthCookie(res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  try {
+    await claimGuestCart(req);
+  } catch (error) {
+    console.error(error);
+  }
+  void sendWelcomeEmail({ name: user.name, email: user.email }).catch((error) => {
+    console.error("[email:welcome]", error instanceof Error ? error.message : error);
+  });
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
-});
+}
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/register", registerCustomer);
+app.post("/api/register", registerCustomer);
+
+async function loginCustomer(req: express.Request, res: express.Response) {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Incorrect email or password." });
@@ -392,20 +433,34 @@ app.post("/api/auth/login", async (req, res) => {
     res.status(400).json({ error: "Incorrect email or password." });
     return;
   }
-  setAuthCookie(res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  try {
+    await claimGuestCart(req);
+  } catch (error) {
+    console.error(error);
+  }
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
-});
+}
 
-app.post("/api/auth/logout", (_req, res) => {
+app.post("/api/auth/login", loginCustomer);
+app.post("/api/login", loginCustomer);
+
+function logoutCustomer(_req: express.Request, res: express.Response) {
   res.clearCookie(CUSTOMER_COOKIE, { path: "/" });
   res.json({ ok: true });
-});
+}
 
-app.get("/api/auth/me", (req, res) => {
+app.post("/api/auth/logout", logoutCustomer);
+app.post("/api/logout", logoutCustomer);
+
+function readCustomer(req: express.Request, res: express.Response) {
   res.json(readUser(req));
-});
+}
 
-app.post("/api/admin/auth/login", async (req, res) => {
+app.get("/api/auth/me", readCustomer);
+app.get("/api/me", readCustomer);
+
+async function loginStaff(req: express.Request, res: express.Response) {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Incorrect email or password." });
@@ -423,22 +478,34 @@ app.post("/api/admin/auth/login", async (req, res) => {
   }
   setStaffCookie(res, { id: user.id, email: user.email, name: user.name, role: user.role });
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
-});
+}
 
-app.post("/api/admin/auth/logout", (_req, res) => {
+app.post("/api/admin/auth/login", loginStaff);
+app.post("/api/staff-login", loginStaff);
+
+function logoutStaff(_req: express.Request, res: express.Response) {
   res.clearCookie(STAFF_COOKIE, { path: "/" });
   res.json({ ok: true });
-});
+}
 
-app.get("/api/admin/auth/me", (req, res) => {
+app.post("/api/admin/auth/logout", logoutStaff);
+app.post("/api/staff-logout", logoutStaff);
+
+function readStaffSession(req: express.Request, res: express.Response) {
   res.json(readStaff(req));
-});
+}
 
-app.get("/api/payments/config", (_req, res) => {
+app.get("/api/admin/auth/me", readStaffSession);
+app.get("/api/staff-me", readStaffSession);
+
+function paymentConfig(_req: express.Request, res: express.Response) {
   res.json({ card: stripeEnabled() });
-});
+}
 
-app.get("/api/checkout/confirm", async (req, res) => {
+app.get("/api/payments/config", paymentConfig);
+app.get("/api/pay-config", paymentConfig);
+
+async function confirmCheckout(req: express.Request, res: express.Response) {
   const sessionId = String(req.query.session_id ?? "");
   if (!sessionId.startsWith("cs_")) {
     res.status(400).json({ error: "Missing payment session." });
@@ -457,18 +524,23 @@ app.get("/api/checkout/confirm", async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Could not confirm payment." });
   }
-});
+}
 
-app.post("/api/checkout", async (req, res) => {
+app.get("/api/checkout/confirm", confirmCheckout);
+app.get("/api/pay-confirm", confirmCheckout);
+
+app.post("/api/checkout", requireUser, async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Please check your details." });
     return;
   }
-  if (parsed.data.paymentMethod === "CARD" && !stripeEnabled()) {
+  const payByCard = stripeEnabled();
+  if (!payByCard) {
     res.status(400).json({ error: "Card payments are not configured." });
     return;
   }
+  await claimGuestCart(req);
   const cart = await getCart(req);
   if (!cart || cart.items.length === 0) {
     res.status(400).json({ error: "Your basket is empty." });
@@ -493,18 +565,17 @@ app.post("/api/checkout", async (req, res) => {
         : summary.subtotal >= site.freeDeliveryThreshold
           ? 0
           : site.standardDeliveryFee;
-  const user = readUser(req);
-  const payByCard = parsed.data.paymentMethod === "CARD";
+  const user = req.user!;
   const created = await prisma.$transaction(async (tx) => {
     const order = await tx.order.create({
       data: {
         orderNumber: `MJ-${orderCode()}`,
-        userId: user?.id,
-        email: parsed.data.email.toLowerCase(),
+        userId: user.id,
+        email: user.email,
         phone: parsed.data.phone,
         fullName: parsed.data.fullName,
-        paymentMethod: parsed.data.paymentMethod,
-        paymentStatus: payByCard ? "PENDING" : "UNPAID",
+        paymentMethod: "CARD",
+        paymentStatus: "PENDING",
         status: "PENDING",
         subtotal: summary.subtotal,
         discount,
@@ -541,71 +612,67 @@ app.post("/api/checkout", async (req, res) => {
         });
       }
     }
-    if (!payByCard) {
-      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-    }
     return order;
   });
 
-  if (payByCard) {
-    try {
-      const session = await createStripeCheckoutSession({
-        orderId: created.id,
-        orderNumber: created.orderNumber,
-        email: created.email,
-        total: created.total,
-        deliveryFee: created.deliveryFee,
-        discount: created.discount,
-        lines: summary.items.map((item) => ({
-          name: item.product.name,
-          quantity: item.quantity,
-          unitAmount: item.unitPrice,
-          image: item.product.images[0]?.url,
-        })),
-      });
-      await prisma.order.update({
-        where: { id: created.id },
-        data: { stripePaymentId: session.id },
-      });
-      await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-      res.clearCookie("mojiano_sid");
-      res.json({ ok: true, orderNumber: created.orderNumber, total: created.total, checkoutUrl: session.url });
-      return;
-    } catch (error) {
-      await prisma.$transaction(async (tx) => {
-        const order = await tx.order.findUnique({ where: { id: created.id }, include: { items: true } });
-        if (!order) return;
-        for (const item of order.items) {
-          if (item.variantId) {
-            await tx.productVariant.update({
-              where: { id: item.variantId },
-              data: { stock: { increment: item.quantity } },
-            });
-          } else {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stockQuantity: { increment: item.quantity } },
-            });
-          }
-        }
-        await tx.order.delete({ where: { id: created.id } });
-      });
-      res.status(500).json({ error: error instanceof Error ? error.message : "Could not start card payment." });
-      return;
+  try {
+    const session = await createStripeCheckoutSession({
+      orderId: created.id,
+      orderNumber: created.orderNumber,
+      email: created.email,
+      total: created.total,
+      deliveryFee: created.deliveryFee,
+      discount: created.discount,
+      lines: summary.items.map((item) => ({
+        name: item.product.name,
+        quantity: item.quantity,
+        unitAmount: item.unitPrice,
+        image: item.product.images[0]?.url,
+      })),
+    });
+    if (!session.url) {
+      throw new Error("Stripe did not return a checkout page.");
     }
+    await prisma.order.update({
+      where: { id: created.id },
+      data: { stripePaymentId: session.id },
+    });
+    await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+    res.clearCookie("mojiano_sid");
+    res.json({ ok: true, orderNumber: created.orderNumber, total: created.total, checkoutUrl: session.url });
+  } catch (error) {
+    await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: created.id }, include: { items: true } });
+      if (!order) return;
+      for (const item of order.items) {
+        if (item.variantId) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: item.quantity } },
+          });
+        } else {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stockQuantity: { increment: item.quantity } },
+          });
+        }
+      }
+      await tx.order.delete({ where: { id: created.id } });
+    });
+    res.status(500).json({ error: error instanceof Error ? error.message : "Could not start card payment." });
   }
-
-  res.clearCookie("mojiano_sid");
-  res.json({ ok: true, orderNumber: created.orderNumber, total: created.total });
 });
 
-app.get("/api/account/orders", requireUser, async (req, res) => {
+async function listMyOrders(req: express.Request, res: express.Response) {
   const orders = await prisma.order.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },
   });
   res.json(orders);
-});
+}
+
+app.get("/api/account/orders", requireUser, listMyOrders);
+app.get("/api/my-orders", requireUser, listMyOrders);
 
 app.get("/api/account/orders/:orderNumber", requireUser, async (req, res) => {
   const order = await prisma.order.findFirst({
@@ -668,17 +735,18 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
         COUNT(*) FILTER (WHERE "paymentStatus" IN ('UNPAID', 'PENDING') AND status NOT IN ('CANCELLED', 'REFUNDED'))::int AS "awaitingCount",
         COUNT(*) FILTER (WHERE status IN ('PENDING', 'CONFIRMED', 'PROCESSING'))::int AS "openOrders",
         (SELECT COALESCE(json_object_agg(status, cnt), '{}'::json) FROM (
-          SELECT status::text AS status, COUNT(*)::int AS cnt FROM "Order" GROUP BY status
+          SELECT status::text AS status, COUNT(*)::int AS cnt FROM "Order" WHERE "paymentStatus" = 'PAID' GROUP BY status
         ) grouped) AS pipeline,
         (SELECT COALESCE(json_agg(json_build_object('day', day, 'orders', orders, 'revenue', revenue)), '[]'::json) FROM (
           SELECT (("createdAt" AT TIME ZONE 'Europe/London')::date) AS day,
                  COUNT(*)::int AS orders,
                  COALESCE(SUM(total), 0)::int AS revenue
           FROM "Order"
-          WHERE "createdAt" >= ${weekStart}
+          WHERE "createdAt" >= ${weekStart} AND "paymentStatus" = 'PAID'
           GROUP BY 1
         ) days) AS pulse
       FROM "Order"
+      WHERE "paymentStatus" = 'PAID'
     `,
     prisma.$queryRaw<
       {
@@ -706,6 +774,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
     `,
     prisma.user.count({ where: { role: "CUSTOMER" } }),
     prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
       orderBy: { createdAt: "desc" },
       take: 8,
       select: {
@@ -1105,10 +1174,11 @@ app.patch("/api/admin/categories/:id", requireAdmin, async (req, res) => {
 app.get("/api/admin/orders", requireAdmin, async (_req, res) => {
   await sendCached(res, "orders", () =>
     prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
       orderBy: { createdAt: "desc" },
       take: 120,
       include: {
-        items: { select: { id: true, name: true, sku: true, quantity: true, unitPrice: true, image: true } },
+        items: { select: { id: true, name: true, sku: true, quantity: true, unitPrice: true, totalPrice: true, image: true } },
       },
     }),
   );
@@ -1234,6 +1304,10 @@ app.put("/api/admin/settings", requireAdmin, async (req, res) => {
     create: { id: "default", ...req.body },
   });
   res.json(site);
+});
+
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found." });
 });
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

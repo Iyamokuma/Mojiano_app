@@ -5,12 +5,17 @@
   "outputDirectory": "dist",
   "regions": ["lhr1"],
   "functions": {
+    "api/server.js": {
+      "maxDuration": 30,
+      "includeFiles": "{api/_app.js,node_modules/.prisma/client/**}"
+    },
     "api/[[...path]].js": {
       "maxDuration": 30,
       "includeFiles": "{api/_app.js,node_modules/.prisma/client/**}"
     }
   },
   "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/server?__path=/api/:path*" },
     { "source": "/uploads/:path*", "destination": "/api/uploads/:path*" },
     { "source": "/((?!api/|uploads/|assets/|brand/|hero/).*)", "destination": "/index.html" }
   ],
@@ -26,6 +31,14 @@
     {
       "source": "/hero/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }]
+    },
+    {
+      "source": "/api/home",
+      "headers": [{ "key": "Cache-Control", "value": "public, s-maxage=90, stale-while-revalidate=600" }]
+    },
+    {
+      "source": "/api/products",
+      "headers": [{ "key": "Cache-Control", "value": "public, s-maxage=45, stale-while-revalidate=300" }]
     }
   ]
 }

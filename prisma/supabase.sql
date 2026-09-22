@@ -300,9 +300,9 @@ CREATE TABLE "SiteSettings" (
     "instagramUrl" TEXT NOT NULL DEFAULT '',
     "facebookUrl" TEXT NOT NULL DEFAULT '',
     "bankDetails" TEXT NOT NULL DEFAULT '',
-    "standardDeliveryFee" INTEGER NOT NULL DEFAULT 499,
+    "standardDeliveryFee" INTEGER NOT NULL DEFAULT 100,
     "freeDeliveryThreshold" INTEGER NOT NULL DEFAULT 7500,
-    "expressDeliveryFee" INTEGER NOT NULL DEFAULT 899,
+    "expressDeliveryFee" INTEGER NOT NULL DEFAULT 100,
 
     CONSTRAINT "SiteSettings_pkey" PRIMARY KEY ("id")
 );

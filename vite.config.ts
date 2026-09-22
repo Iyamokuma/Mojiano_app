@@ -15,6 +15,7 @@ export default defineConfig({
     target: "es2022",
     cssMinify: true,
     modulePreload: { polyfill: false },
+    minify: true,
     rollupOptions: {
       output: {
         manualChunks(id) {

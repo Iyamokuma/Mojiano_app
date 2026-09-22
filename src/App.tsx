@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { HeaderNav } from "@/components/storefront/header-nav";
 import { Footer } from "@/components/storefront/footer";
 import { WhatsAppButton } from "@/components/storefront/whatsapp-button";
@@ -13,11 +13,12 @@ import { Input, Label, Select, Textarea, FieldError } from "@/components/ui/fiel
 import { EmptyState } from "@/components/ui/feedback";
 import { useShop } from "@/context/shop";
 import { api, peekApi } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { formatGBP } from "@/lib/money";
-import { cn } from "@/lib/utils";
-import { AdminAuthLayout } from "@/context/admin";
-import { AdminGate } from "@/pages/admin";
-import { ProductPage } from "@/pages/product";
+import { cn, safeNextPath } from "@/lib/utils";
+const AdminAuthLayout = lazy(() => import("@/context/admin").then((module) => ({ default: module.AdminAuthLayout })));
+const AdminGate = lazy(() => import("@/pages/admin").then((module) => ({ default: module.AdminGate })));
+const ProductPage = lazy(() => import("@/pages/product").then((module) => ({ default: module.ProductPage })));
 
 function waLink(phone: unknown, message: string) {
   const digits = String(phone ?? "").replace(/[^\d]/g, "");
@@ -77,7 +78,7 @@ function HomePage() {
   return (
     <div>
       <HomeHero
-        title={hero?.title ?? "Quality, at the right price."}
+        title={hero?.title ?? "Wholesale clearance from our warehouse."}
         body={hero?.body}
         ctaLabel={hero?.ctaLabel}
         ctaHref={hero?.ctaHref}
@@ -167,7 +168,7 @@ function CategoryPage() {
 }
 
 function BasketPage() {
-  const { setCartCount } = useShop();
+  const { setCartCount, user } = useShop();
   const [cart, setCart] = useState<{ items: { id: string; quantity: number; unitPrice: number; lineTotal: number; product: ProductCardData }[]; subtotal: number } | null>(null);
 
   async function load() {
@@ -192,7 +193,7 @@ function BasketPage() {
         <ul className="mt-8 divide-y divide-line border-y border-line">
           {cart.items.map((item) => (
             <li key={item.id} className="flex gap-4 py-5">
-              <img src={item.product.images[0]?.url} alt="" className="h-24 w-20 rounded-xl object-cover" />
+              <img src={item.product.images[0]?.url ? resolveImageUrl(item.product.images[0].url) : undefined} alt="" className="h-24 w-20 rounded-xl object-cover" />
               <div className="flex-1">
                 <Link to={`/product/${item.product.slug}`} className="font-medium">{item.product.name}</Link>
                 <p className="text-sm">{formatGBP(item.unitPrice)}</p>
@@ -211,29 +212,26 @@ function BasketPage() {
       <aside className="h-fit rounded-3xl bg-white p-6">
         <h2 className="font-display text-2xl">Summary</h2>
         <p className="mt-4 flex justify-between"><span>Subtotal</span><span>{formatGBP(cart.subtotal)}</span></p>
-        <Link to="/checkout" className={cn(buttonVariants({ size: "lg" }), "mt-6 w-full")}>Checkout</Link>
+        <Link to={user ? "/checkout" : "/login?next=/checkout"} className={cn(buttonVariants({ size: "lg" }), "mt-6 w-full")}>Checkout</Link>
       </aside>
     </div>
   );
 }
 
 function CheckoutPage() {
-  const { user, refresh } = useShop();
+  const { user, ready, refresh, cardPayments } = useShop();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [error, setError] = useState<string | null>(params.get("cancelled") ? "Payment was cancelled. Your basket is still here." : null);
   const [pending, setPending] = useState(false);
-  const [card, setCard] = useState(false);
 
-  useEffect(() => {
-    void api<{ card: boolean }>("/api/payments/config")
-      .then((config) => setCard(config.card))
-      .catch(() => setCard(false));
-  }, []);
+  if (!ready) return <div className="container-narrow py-12 text-muted">Loading…</div>;
+  if (!user) return <Navigate to="/login?next=/checkout" replace />;
 
   return (
     <div className="container-narrow py-12">
       <h1 className="font-display text-4xl">Checkout</h1>
+      <p className="mt-3 text-sm text-muted">Signed in as {user.email}. Complete your details to pay.</p>
       <form
         className="mt-8 space-y-4"
         onSubmit={async (event) => {
@@ -244,23 +242,28 @@ function CheckoutPage() {
           try {
             const result = await api<{ orderNumber: string; checkoutUrl?: string | null }>("/api/checkout", {
               method: "POST",
-              body: JSON.stringify(Object.fromEntries(form.entries())),
+              body: JSON.stringify({ ...Object.fromEntries(form.entries()), email: user.email, paymentMethod: "CARD" }),
             });
             await refresh();
-            if (result.checkoutUrl) {
-              window.location.assign(result.checkoutUrl);
+            if (!result.checkoutUrl) {
+              throw new Error("Stripe checkout did not start. Please try again.");
+            }
+            window.location.assign(result.checkoutUrl);
+            return;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Could not place order.";
+            if (message === "Please sign in.") {
+              navigate("/login?next=/checkout");
               return;
             }
-            navigate(`/checkout/confirmation/${result.orderNumber}`);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not place order.");
+            setError(message);
           } finally {
             setPending(false);
           }
         }}
       >
-        <div><Label>Email</Label><Input name="email" type="email" required defaultValue={user?.email ?? ""} /></div>
-        <div><Label>Full name</Label><Input name="fullName" required defaultValue={user?.name ?? ""} /></div>
+        <div><Label>Email</Label><Input name="email" type="email" required defaultValue={user.email} readOnly className="bg-canvas-warm" /></div>
+        <div><Label>Full name</Label><Input name="fullName" required defaultValue={user.name} /></div>
         <div><Label>Phone</Label><Input name="phone" required /></div>
         <div><Label>Address</Label><Input name="line1" required /></div>
         <div><Label>City</Label><Input name="city" required /></div>
@@ -274,18 +277,16 @@ function CheckoutPage() {
             <option>Collection</option>
           </Select>
         </div>
-        <div>
-          <Label>Payment</Label>
-          <Select name="paymentMethod" key={card ? "card" : "transfer"} defaultValue={card ? "CARD" : "BANK_TRANSFER"}>
-            {card ? <option value="CARD">Card (Stripe)</option> : null}
-            <option value="BANK_TRANSFER">Bank transfer</option>
-            <option value="CASH_ON_DELIVERY">Cash on delivery</option>
-          </Select>
-        </div>
+        <input type="hidden" name="paymentMethod" value="CARD" />
+        <p className="rounded-2xl bg-white px-4 py-3 text-sm text-muted">
+          {cardPayments
+            ? "Place order opens Stripe so you can pay by card. The order only reaches the shop floor after payment is confirmed."
+            : "Card payments are not available right now."}
+        </p>
         <div><Label>Promo code</Label><Input name="promoCode" /></div>
         <FieldError message={error ?? undefined} />
-        <Button type="submit" size="lg" className="w-full" disabled={pending}>
-          {pending ? "Placing order…" : "Place order"}
+        <Button type="submit" size="lg" className="w-full" disabled={pending || !cardPayments}>
+          {pending ? "Opening Stripe…" : "Place order"}
         </Button>
       </form>
     </div>
@@ -300,7 +301,7 @@ function ConfirmationPage() {
 
   useEffect(() => {
     if (!sessionId) return;
-    void api<{ paymentStatus: string }>("/api/checkout/confirm?session_id=" + encodeURIComponent(sessionId))
+    void api<{ paymentStatus: string }>("/api/pay-confirm?session_id=" + encodeURIComponent(sessionId))
       .then((result) => setStatus(result.paymentStatus))
       .catch(() => setStatus("PENDING"));
   }, [sessionId]);
@@ -321,26 +322,33 @@ function ConfirmationPage() {
 }
 
 function LoginPage() {
-  const { refresh, user } = useShop();
+  const { refresh, user, ready } = useShop();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = safeNextPath(params.get("next"));
+  const checkout = next.startsWith("/checkout");
   const [error, setError] = useState<string | null>(null);
-  if (user) return <Navigate to="/account" replace />;
+  if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (user) return <Navigate to={next} replace />;
 
   return (
     <div className="container-narrow py-16">
       <h1 className="font-display text-4xl">Sign in</h1>
+      {checkout ? (
+        <p className="mt-3 text-sm text-muted">Sign in to continue to checkout and pay with Stripe.</p>
+      ) : null}
       <form
         className="mt-8 space-y-4 rounded-3xl bg-white p-6"
         onSubmit={async (event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           try {
-            await api("/api/auth/login", {
+            await api("/api/login", {
               method: "POST",
               body: JSON.stringify({ email: form.get("email"), password: form.get("password") }),
             });
             await refresh();
-            navigate("/account");
+            navigate(next);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not sign in.");
           }
@@ -350,31 +358,45 @@ function LoginPage() {
         <div><Label>Password</Label><Input name="password" type="password" required /></div>
         <FieldError message={error ?? undefined} />
         <Button type="submit" className="w-full" size="lg">Sign in</Button>
-        <p className="text-center text-sm text-muted">New here? <Link to="/register" className="text-ink underline">Create an account</Link></p>
+        <p className="text-center text-sm text-muted">
+          New here?{" "}
+          <Link to={`/register?next=${encodeURIComponent(next)}`} className="text-ink underline">
+            Create an account
+          </Link>
+        </p>
       </form>
     </div>
   );
 }
 
 function RegisterPage() {
-  const { refresh } = useShop();
+  const { refresh, user, ready } = useShop();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = safeNextPath(params.get("next"));
+  const checkout = next.startsWith("/checkout");
   const [error, setError] = useState<string | null>(null);
+  if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (user) return <Navigate to={next} replace />;
+
   return (
     <div className="container-narrow py-16">
       <h1 className="font-display text-4xl">Create account</h1>
+      {checkout ? (
+        <p className="mt-3 text-sm text-muted">Create an account, then you can complete checkout and pay with Stripe.</p>
+      ) : null}
       <form
         className="mt-8 space-y-4 rounded-3xl bg-white p-6"
         onSubmit={async (event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           try {
-            await api("/api/auth/register", {
+            await api("/api/register", {
               method: "POST",
               body: JSON.stringify({ name: form.get("name"), email: form.get("email"), password: form.get("password") }),
             });
             await refresh();
-            navigate("/account");
+            navigate(next);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not register.");
           }
@@ -385,6 +407,12 @@ function RegisterPage() {
         <div><Label>Password</Label><Input name="password" type="password" required minLength={8} /></div>
         <FieldError message={error ?? undefined} />
         <Button type="submit" className="w-full" size="lg">Create account</Button>
+        <p className="text-center text-sm text-muted">
+          Already have an account?{" "}
+          <Link to={`/login?next=${encodeURIComponent(next)}`} className="text-ink underline">
+            Sign in
+          </Link>
+        </p>
       </form>
     </div>
   );
@@ -396,14 +424,14 @@ function AccountPage() {
   const [orders, setOrders] = useState<{ orderNumber: string; total: number; status: string }[]>([]);
   useEffect(() => {
     if (!user) return;
-    void api<typeof orders>("/api/account/orders").then(setOrders);
+    void api<typeof orders>("/api/my-orders").then(setOrders);
   }, [user]);
   if (!user) return <Navigate to="/login" replace />;
   return (
     <div className="container-page py-12">
       <h1 className="font-display text-4xl">Account</h1>
       <p className="mt-2 text-muted">{user.name} · {user.email}</p>
-      <Button className="mt-4" variant="outline" onClick={async () => { await api("/api/auth/logout", { method: "POST" }); await refresh(); navigate("/"); }}>Sign out</Button>
+      <Button className="mt-4" variant="outline" onClick={async () => { await api("/api/logout", { method: "POST" }); await refresh(); navigate("/"); }}>Sign out</Button>
       <h2 className="mt-10 font-display text-2xl">Orders</h2>
       <ul className="mt-4 divide-y divide-line rounded-3xl bg-white">
         {orders.map((order) => (
@@ -435,7 +463,13 @@ function ContactPage() {
       <h1 className="font-display text-5xl">Contact</h1>
       <div className="mt-8 space-y-3 rounded-3xl bg-white p-6 text-sm">
         <p>{String(settings.email ?? "")}</p>
-        <p>{String(settings.phone ?? "")}</p>
+        {settings.phone ? (
+          <p>
+            <a href={`tel:${String(settings.phone).replace(/[^\d+]/g, "")}`} className="hover:text-gold-deep">
+              {String(settings.phone)}
+            </a>
+          </p>
+        ) : null}
         <p className="whitespace-pre-line">{String(settings.address ?? "")}</p>
       </div>
       {wa ? <a href={wa} className={cn(buttonVariants({ size: "lg" }), "mt-6 inline-flex")} target="_blank" rel="noreferrer">Message on WhatsApp</a> : null}
@@ -454,6 +488,7 @@ function NotFoundPage() {
 
 export function App() {
   return (
+    <Suspense fallback={<div className="container-page py-24 text-muted">Loading…</div>}>
     <Routes>
       <Route element={<AdminAuthLayout />}>
         <Route path="/admin/*" element={<AdminGate />} />
@@ -475,5 +510,6 @@ export function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
+    </Suspense>
   );
 }

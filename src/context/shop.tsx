@@ -9,6 +9,7 @@ type ShopState = {
   ready: boolean;
   categories: ShopCategory[];
   cartCount: number;
+  cardPayments: boolean;
   settings: Record<string, string | number | boolean | null>;
   spotlightSlug: string | null;
   setSpotlightSlug: (slug: string | null) => void;
@@ -19,6 +20,7 @@ type ShopState = {
 const ShopContext = createContext<ShopState | null>(null);
 
 const CATS_KEY = "mj-categories";
+const SETTINGS_KEY = "mj-settings";
 
 function readCachedCategories(): ShopCategory[] {
   try {
@@ -35,7 +37,15 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [categories, setCategories] = useState<ShopCategory[]>(readCachedCategories);
   const [cartCount, setCartCount] = useState(0);
-  const [settings, setSettings] = useState<Record<string, string | number | boolean | null>>({});
+  const [cardPayments, setCardPayments] = useState(false);
+  const [settings, setSettings] = useState<Record<string, string | number | boolean | null>>(() => {
+    try {
+      const raw = sessionStorage.getItem(SETTINGS_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, string | number | boolean | null>) : {};
+    } catch {
+      return {};
+    }
+  });
   const [spotlightSlug, setSpotlightSlug] = useState<string | null>(null);
 
   async function refresh() {
@@ -44,14 +54,17 @@ export function ShopProvider({ children }: { children: ReactNode }) {
         user: ShopUser;
         categories: ShopCategory[];
         cart: { count: number };
+        card?: boolean;
         settings: Record<string, string | number | boolean | null>;
       }>("/api/bootstrap");
       setUser(data.user);
       setCategories(data.categories);
       setCartCount(data.cart.count);
+      setCardPayments(Boolean(data.card));
       setSettings(data.settings);
       try {
         sessionStorage.setItem(CATS_KEY, JSON.stringify(data.categories));
+        sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
       } catch {
         /* private mode */
       }
@@ -73,8 +86,8 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, categories, cartCount, settings, spotlightSlug, setSpotlightSlug, refresh, setCartCount }),
-    [user, ready, categories, cartCount, settings, spotlightSlug],
+    () => ({ user, ready, categories, cartCount, cardPayments, settings, spotlightSlug, setSpotlightSlug, refresh, setCartCount }),
+    [user, ready, categories, cartCount, cardPayments, settings, spotlightSlug],
   );
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;

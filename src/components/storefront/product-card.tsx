@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import { compactImageUrl } from "@/lib/media";
 import { formatGBP, discountPercent, effectivePrice } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { AddToCartButton } from "@/components/storefront/add-to-cart";
@@ -34,7 +35,7 @@ export function ProductCard({ product }: { product: ProductCardData }) {
         <div className="relative aspect-square overflow-hidden rounded-2xl">
           {image ? (
             <img
-              src={image.url}
+              src={compactImageUrl(image.url)}
               alt={image.alt || product.name}
               loading="lazy"
               decoding="async"
@@ -111,7 +112,7 @@ function QuickView({
         className="relative grid w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl md:grid-cols-2"
       >
         <div className="aspect-square bg-canvas">
-          {image ? <img src={image.url} alt="" className="h-full w-full object-contain p-6" /> : null}
+          {image ? <img src={compactImageUrl(image.url)} alt="" className="h-full w-full object-contain p-6" /> : null}
         </div>
         <div className="flex flex-col p-6 sm:p-8">
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted">{product.category.name}</p>

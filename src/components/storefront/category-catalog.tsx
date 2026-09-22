@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
+import { compactImageUrl, resolveCategoryImage } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 export type CategoryCard = {
@@ -90,7 +91,9 @@ export function CategoryCatalog({ categories }: { categories: CategoryCard[] }) 
                     <div className="relative aspect-square overflow-hidden rounded-2xl">
                       {category.image ? (
                         <img
-                          src={category.image}
+                          src={compactImageUrl(resolveCategoryImage(category.slug, category.image) || category.image, 640)}
+                          loading="lazy"
+                          decoding="async"
                           alt={category.name}
                           className="h-full w-full object-cover object-center transition duration-500 hover:scale-[1.03]"
                         />

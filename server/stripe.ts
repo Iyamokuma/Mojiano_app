@@ -1,5 +1,8 @@
 import Stripe from "stripe";
+import { resolveImageUrl } from "../src/lib/media";
 import { prisma } from "./db";
+import { notifyOrderPaid } from "./email";
+import { storeUrl } from "./site-url";
 
 export function stripeEnabled() {
   return Boolean(process.env.STRIPE_SECRET_KEY?.trim());
@@ -11,13 +14,7 @@ export function getStripe() {
   return new Stripe(key);
 }
 
-export function storeUrl() {
-  const fromEnv = process.env.SITE_URL?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
-  if (process.env.VERCEL_ENV === "production") return "https://mojiano.co.uk";
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3002";
-}
+export { storeUrl } from "./site-url";
 
 type CheckoutLine = {
   name: string;
@@ -40,7 +37,8 @@ export async function createStripeCheckoutSession(input: {
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = input.lines
     .filter((line) => line.unitAmount > 0 && line.quantity > 0)
     .map((line) => {
-      const image = line.image && line.image.startsWith("http") ? line.image : undefined;
+      const rawImage = line.image ? resolveImageUrl(line.image) : undefined;
+      const image = rawImage && rawImage.startsWith("http") ? rawImage : undefined;
       return {
         quantity: line.quantity,
         price_data: {
@@ -102,12 +100,28 @@ export async function markOrderPaidFromSession(session: Stripe.Checkout.Session)
   if (!orderNumber) return null;
   const paid = session.payment_status === "paid" || session.status === "complete";
   if (!paid) return null;
+
+  const existing = await prisma.order.findUnique({
+    where: { orderNumber },
+    include: { items: true },
+  });
+  if (!existing) return null;
+  if (existing.paymentStatus === "PAID") return existing;
+
   const intent = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
-  return prisma.order.update({
+  const updated = await prisma.order.update({
     where: { orderNumber },
     data: {
       paymentStatus: "PAID",
+      status: existing.status === "PENDING" ? "CONFIRMED" : existing.status,
       stripePaymentId: intent || session.id,
     },
+    include: { items: true },
   });
+
+  void notifyOrderPaid(updated).catch((error) => {
+    console.error("[email:order]", error instanceof Error ? error.message : error);
+  });
+
+  return updated;
 }

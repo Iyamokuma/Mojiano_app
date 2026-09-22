@@ -19,7 +19,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
 
   async function refresh() {
     try {
-      const user = await api<StaffUser | null>("/api/admin/auth/me");
+      const user = await api<StaffUser | null>("/api/staff-me");
       const next = user?.role === "ADMIN" ? user : null;
       if (next) warmupAdmin();
       setStaff(next);

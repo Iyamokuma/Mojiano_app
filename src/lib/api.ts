@@ -1,6 +1,6 @@
 const cache = new Map<string, { at: number; data: unknown }>();
 const inflight = new Map<string, Promise<unknown>>();
-const FRESH_MS = 15_000;
+const FRESH_MS = 45_000;
 
 function methodOf(init?: RequestInit) {
   return (init?.method ?? "GET").toUpperCase();
@@ -47,7 +47,10 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const data = (await res.json().catch(() => ({}))) as (T & { error?: string }) | null;
   if (!res.ok) {
-    throw new Error((data && typeof data === "object" && "error" in data && data.error) || "Request failed");
+    throw new Error(
+      (data && typeof data === "object" && "error" in data && data.error) ||
+        (res.status === 404 ? "That service is unavailable. Please try again." : "Request failed"),
+    );
   }
   return data as T;
 }

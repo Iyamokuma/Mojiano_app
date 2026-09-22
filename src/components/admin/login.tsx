@@ -47,7 +47,7 @@ export function AdminLoginPage() {
                 setPending(true);
                 setError(null);
                 try {
-                  await api("/api/admin/auth/login", {
+                  await api("/api/staff-login", {
                     method: "POST",
                     body: JSON.stringify({ email: form.get("email"), password: form.get("password") }),
                   });

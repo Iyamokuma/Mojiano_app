@@ -22,3 +22,15 @@ await build({
   external: ["./_app.js"],
   logLevel: "info",
 });
+
+await build({
+  entryPoints: ["server/vercel.ts"],
+  outfile: "api/server.js",
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  packages: "external",
+  external: ["./_app.js"],
+  logLevel: "info",
+});

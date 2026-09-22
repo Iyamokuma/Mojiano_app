@@ -4,7 +4,7 @@ import { formatGBP } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
 import { Eyebrow, ORDER_STATUSES, PAYMENT_STATUSES, Panel, StatusPill, statusTone } from "@/components/admin/ui";
 
-type OrderItem = { id: string; name: string; sku: string; quantity: number; unitPrice: number; image: string | null };
+type OrderItem = { id: string; name: string; sku: string; quantity: number; unitPrice: number; totalPrice?: number; image: string | null };
 type Order = {
   id: string;
   orderNumber: string;
@@ -21,8 +21,26 @@ type Order = {
   deliveryMethod: string;
   createdAt: string;
   notes: string;
+  shippingSnapshot?: string;
+  stripePaymentId?: string | null;
   items: OrderItem[];
 };
+
+function readAddress(snapshot?: string) {
+  try {
+    const data = JSON.parse(snapshot || "{}") as {
+      line1?: string;
+      line2?: string;
+      city?: string;
+      county?: string;
+      postcode?: string;
+      country?: string;
+    };
+    return [data.line1, data.line2, data.city, data.county, data.postcode, data.country].filter(Boolean).join(", ");
+  } catch {
+    return "";
+  }
+}
 
 export function AdminOrders() {
   const cached = peekApi<Order[]>("/api/admin/orders");
@@ -61,7 +79,7 @@ export function AdminOrders() {
       <div>
         <Eyebrow>Tickets</Eyebrow>
         <h1 className="mt-2 font-display text-4xl">All orders</h1>
-        <p className="mt-2 text-sm text-muted">Checkout, bank transfer, collection and the path to the door.</p>
+        <p className="mt-2 text-sm text-muted">Paid orders only. Unpaid Stripe attempts stay off this list.</p>
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -107,31 +125,41 @@ export function AdminOrders() {
                   </button>
                   {open ? (
                     <div className="grid gap-6 border-t border-line bg-canvas/50 px-5 py-5 md:grid-cols-[1.2fr_0.8fr]">
-                      <ul className="space-y-3">
-                        {order.items.map((item) => (
-                          <li key={item.id} className="flex gap-3">
-                            <div className="h-14 w-14 overflow-hidden rounded-xl bg-white">
-                              {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : null}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm">{item.name}</p>
-                              <p className="text-xs text-muted">
-                                {item.sku} · ×{item.quantity}
-                              </p>
-                            </div>
-                            <p className="text-sm">{formatGBP(item.unitPrice * item.quantity)}</p>
-                          </li>
-                        ))}
-                      </ul>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-muted">Paid for</p>
+                        <ul className="mt-3 space-y-3">
+                          {order.items.map((item) => (
+                            <li key={item.id} className="flex gap-3">
+                              <div className="h-14 w-14 overflow-hidden rounded-xl bg-white">
+                                {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : null}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm">{item.name}</p>
+                                <p className="text-xs text-muted">
+                                  {item.sku} · {formatGBP(item.unitPrice)} × {item.quantity}
+                                </p>
+                              </div>
+                              <p className="text-sm">{formatGBP(item.totalPrice ?? item.unitPrice * item.quantity)}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                       <div className="space-y-3 text-sm">
-                        <p>
-                          {order.phone}
-                          {order.notes ? ` · ${order.notes}` : ""}
-                        </p>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.14em] text-muted">Customer</p>
+                          <p className="mt-1 font-medium">{order.fullName}</p>
+                          <p>{order.email}</p>
+                          {order.phone ? <p>{order.phone}</p> : null}
+                          {readAddress(order.shippingSnapshot) ? (
+                            <p className="mt-2 text-muted">{readAddress(order.shippingSnapshot)}</p>
+                          ) : null}
+                          {order.notes ? <p className="mt-2">{order.notes}</p> : null}
+                        </div>
                         <p className="text-muted">
                           Subtotal {formatGBP(order.subtotal)}
                           {order.discount ? ` · discount ${formatGBP(order.discount)}` : ""}
                           {order.deliveryFee ? ` · delivery ${formatGBP(order.deliveryFee)}` : " · free / collection"}
+                          {` · paid ${formatGBP(order.total)}`}
                         </p>
                         <label className="block">
                           <span className="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Status</span>
@@ -161,7 +189,13 @@ export function AdminOrders() {
                             ))}
                           </select>
                         </label>
-                        <p className="text-xs uppercase tracking-[0.14em] text-muted">{order.paymentMethod.replaceAll("_", " ")}</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted">
+                          {order.paymentMethod.replaceAll("_", " ")}
+                          {order.deliveryMethod ? ` · ${order.deliveryMethod}` : ""}
+                        </p>
+                        {order.stripePaymentId ? (
+                          <p className="break-all text-xs text-muted">Stripe {order.stripePaymentId}</p>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}

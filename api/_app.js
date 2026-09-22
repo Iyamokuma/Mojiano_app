@@ -92,6 +92,49 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// src/lib/media.ts
+var UNSPLASH_REPLACEMENTS = {
+  "photo-1512389142860-9c449e58a934": "photo-1470337458703-46ad1756a187",
+  "photo-1504148458000-0471d1165b6d": "photo-1530124566582-a618bc2615dc",
+  "photo-1509557965875-b88c97052fa0": "photo-1572981779307-38b8cabb2407",
+  "photo-1574997149283-02432692c642": "photo-1556909114-f6e7ad7d3136",
+  "photo-1520903920243-00d482a2dc5b": "photo-1434389677669-e08b4cac3105",
+  "photo-1616628188541-925660ab1447": "photo-1493663284031-b7e3aefcae8e",
+  "photo-1507473883500-2dd6282412c8": "photo-1543198126-a8ad8e47fb22",
+  "photo-1469796466631-9d8171f56c36": "photo-1416879595882-3373a0480b5b",
+  "photo-1603190287605-4f70b88c1c6f": "photo-1414235077428-338989a2e8c0",
+  "photo-1515562149607-ee1c82c05e69": "photo-1617038260897-41a1f14a8ca0",
+  "photo-1483985988355-763728e1935b": "photo-1489987707025-afc232f7aed0",
+  "photo-1555041469-a586c61ea9bc": "photo-1586023492125-27b2c045efd7"
+};
+var CATEGORY_IMAGE_OVERRIDES = {
+  "christmas-halloween": "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=1200&q=80",
+  "diy-auto": "https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=1200&q=80",
+  "mixed-households": "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=80",
+  miscellaneous: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80",
+  "fashion-beauty": "https://images.unsplash.com/photo-1489987707025-afc232f7aed0?auto=format&fit=crop&w=1200&q=80",
+  "furniture-sofas": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1200&q=80"
+};
+function resolveImageUrl(url) {
+  let next = url;
+  for (const [from, to] of Object.entries(UNSPLASH_REPLACEMENTS)) {
+    if (next.includes(from)) next = next.replaceAll(from, to);
+  }
+  return next;
+}
+function resolveCategoryImage(slug, image) {
+  if (CATEGORY_IMAGE_OVERRIDES[slug]) return CATEGORY_IMAGE_OVERRIDES[slug];
+  if (!image) return image ?? null;
+  return resolveImageUrl(image);
+}
+function withFixedProductImages(product) {
+  if (!product.images?.length) return product;
+  return {
+    ...product,
+    images: product.images.map((image) => ({ ...image, url: resolveImageUrl(image.url) }))
+  };
+}
+
 // src/lib/money.ts
 function effectivePrice(product) {
   if (product.salePrice && product.salePrice > 0 && product.salePrice < product.price) {
@@ -132,10 +175,53 @@ async function loadCart(id2) {
 async function getCart(req) {
   const user = readUser(req);
   const sessionId = req.cookies?.[CART_COOKIE];
+  if (user) {
+    const userCart = await prisma.cart.findFirst({ where: { userId: user.id }, include: cartInclude });
+    if (userCart) return userCart;
+    if (sessionId) {
+      return prisma.cart.findFirst({ where: { sessionId }, include: cartInclude });
+    }
+    return null;
+  }
+  if (!sessionId) return null;
   return prisma.cart.findFirst({
-    where: user ? { OR: [{ userId: user.id }, { sessionId: sessionId ?? "" }] } : { sessionId: sessionId ?? "" },
+    where: { sessionId },
     include: cartInclude
   });
+}
+async function claimGuestCart(req) {
+  const user = readUser(req);
+  const sessionId = req.cookies?.[CART_COOKIE];
+  if (!user || !sessionId) return;
+  const [userCart, guestCart] = await Promise.all([
+    prisma.cart.findFirst({ where: { userId: user.id }, include: { items: true } }),
+    prisma.cart.findFirst({ where: { sessionId }, include: { items: true } })
+  ]);
+  if (!guestCart || guestCart.id === userCart?.id) return;
+  if (!userCart) {
+    await prisma.cart.update({
+      where: { id: guestCart.id },
+      data: { userId: user.id, sessionId: null }
+    });
+    return;
+  }
+  for (const item of guestCart.items) {
+    const existing = userCart.items.find(
+      (row) => row.productId === item.productId && row.variantId === item.variantId
+    );
+    if (existing) {
+      await prisma.cartItem.update({
+        where: { id: existing.id },
+        data: { quantity: existing.quantity + item.quantity }
+      });
+    } else {
+      await prisma.cartItem.update({
+        where: { id: item.id },
+        data: { cartId: userCart.id }
+      });
+    }
+  }
+  await prisma.cart.delete({ where: { id: guestCart.id } });
 }
 async function getOrCreateCart(req, res) {
   const user = readUser(req);
@@ -159,7 +245,12 @@ async function getOrCreateCart(req, res) {
 function summariseCart(cart) {
   const items = cart?.items.map((item) => {
     const unit = item.variant?.price ?? effectivePrice(item.product);
-    return { ...item, unitPrice: unit, lineTotal: unit * item.quantity };
+    return {
+      ...item,
+      product: withFixedProductImages(item.product),
+      unitPrice: unit,
+      lineTotal: unit * item.quantity
+    };
   }) ?? [];
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const count = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -187,10 +278,28 @@ var productCardSelect = {
   ratingAvg: true,
   reviewCount: true,
   category: { select: { name: true, slug: true } },
-  images: { orderBy: { sortOrder: "asc" }, take: 2, select: { url: true, alt: true } }
+  images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } }
 };
+function withFixedCategory(category) {
+  return {
+    ...category,
+    image: resolveCategoryImage(category.slug, category.image ?? null),
+    ...category.children ? {
+      children: category.children.map((child) => ({
+        ...child,
+        image: resolveCategoryImage(child.slug, child.image ?? null)
+      }))
+    } : {},
+    ...category.parent ? {
+      parent: {
+        ...category.parent,
+        image: resolveCategoryImage(category.parent.slug, category.parent.image ?? null)
+      }
+    } : {}
+  };
+}
 async function getVisibleCategories() {
-  return prisma.category.findMany({
+  const categories = await prisma.category.findMany({
     where: { isVisible: true, deletedAt: null, parentId: null },
     orderBy: { sortOrder: "asc" },
     include: {
@@ -200,15 +309,17 @@ async function getVisibleCategories() {
       }
     }
   });
+  return categories.map((category) => withFixedCategory(category));
 }
 async function getCategoryBySlug(slug) {
-  return prisma.category.findFirst({
+  const category = await prisma.category.findFirst({
     where: { slug, deletedAt: null, isVisible: true },
     include: {
       children: { where: { isVisible: true, deletedAt: null }, orderBy: { sortOrder: "asc" } },
       parent: true
     }
   });
+  return category ? withFixedCategory(category) : category;
 }
 async function queryProducts(input) {
   const {
@@ -280,7 +391,7 @@ async function queryProducts(input) {
     })
   ]);
   return {
-    products,
+    products: products.map((product) => withFixedProductImages(product)),
     total,
     page,
     pageSize,
@@ -297,7 +408,7 @@ async function queryProducts(input) {
   };
 }
 async function getProductBySlug(slug) {
-  return prisma.product.findFirst({
+  const product = await prisma.product.findFirst({
     where: { slug, isActive: true, deletedAt: null },
     include: {
       category: true,
@@ -311,13 +422,15 @@ async function getProductBySlug(slug) {
       }
     }
   });
+  return product ? withFixedProductImages(product) : product;
 }
 async function getRelatedProducts(productId, categoryId) {
-  return prisma.product.findMany({
+  const products = await prisma.product.findMany({
     where: { id: { not: productId }, categoryId, isActive: true, deletedAt: null },
     take: 4,
     select: productCardSelect
   });
+  return products.map((product) => withFixedProductImages(product));
 }
 async function getHomeCollections() {
   const select = productCardSelect;
@@ -332,7 +445,12 @@ async function getHomeCollections() {
     }),
     prisma.product.findMany({ where: { bestSeller: true, isActive: true, deletedAt: null }, take: 8, select })
   ]);
-  return { featured, clearance, newArrivals, bestSellers };
+  return {
+    featured: featured.map((product) => withFixedProductImages(product)),
+    clearance: clearance.map((product) => withFixedProductImages(product)),
+    newArrivals: newArrivals.map((product) => withFixedProductImages(product)),
+    bestSellers: bestSellers.map((product) => withFixedProductImages(product))
+  };
 }
 
 // src/lib/validations.ts
@@ -368,7 +486,7 @@ var checkoutSchema = z.object({
   postcode: z.string().trim().min(5, "Enter a valid postcode."),
   country: z.string().trim().default("United Kingdom"),
   deliveryMethod: z.enum(["Standard", "Express", "Collection"]),
-  paymentMethod: z.enum(["CARD", "BANK_TRANSFER", "CASH_ON_DELIVERY"]),
+  paymentMethod: z.enum(["CARD", "BANK_TRANSFER", "CASH_ON_DELIVERY"]).default("CARD"),
   notes: z.string().trim().max(500).optional(),
   promoCode: z.string().trim().optional()
 });
@@ -458,6 +576,125 @@ var productImageUpload = multer({
   }
 });
 
+// server/site-url.ts
+function storeUrl() {
+  const fromEnv = process.env.SITE_URL?.replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (process.env.VERCEL_ENV === "production") return "https://mojiano.co.uk";
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3002";
+}
+
+// server/email.ts
+function formatGBP(pence) {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
+}
+function emailFrom() {
+  return process.env.EMAIL_FROM?.trim() || "Mojiano <orders@mojiano.co.uk>";
+}
+async function sendEmail(input) {
+  const key = process.env.RESEND_API_KEY?.trim();
+  const to = Array.isArray(input.to) ? input.to : [input.to];
+  if (!key) {
+    console.log("[email:skipped]", input.subject, "\u2192", to.join(", "));
+    return { ok: false, skipped: true };
+  }
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: emailFrom(),
+      to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text
+    })
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error("[email:error]", res.status, body.message ?? body);
+    return { ok: false, error: body.message ?? `HTTP ${res.status}` };
+  }
+  return { ok: true, id: body.id };
+}
+function layout(title, inner) {
+  return `<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/></head>
+<body style="margin:0;background:#fff8f4;font-family:Segoe UI,system-ui,sans-serif;color:#1c1410;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#fff8f4;padding:32px 16px;"><tr><td align="center">
+<table width="100%" style="max-width:520px;background:#fffcfa;border:1px solid #eadfd6;border-radius:16px;padding:28px 24px;">
+<tr><td><p style="margin:0 0 8px;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#a8843d;">Mojiano</p>
+<h1 style="margin:0 0 16px;font-size:22px;font-weight:600;">${title}</h1>
+${inner}
+<p style="margin:24px 0 0;font-size:12px;color:#7a6c64;line-height:1.5;">Mojiano Wholesale Clearance \xB7 London</p>
+</td></tr></table></td></tr></table></body></html>`;
+}
+async function sendWelcomeEmail(input) {
+  const origin = storeUrl();
+  const html = layout(
+    "Welcome to Mojiano",
+    `<p style="margin:0 0 12px;line-height:1.55;">Hi ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 16px;line-height:1.55;">Your account is ready. Browse wholesale clearance stock, checkout online, and message us on WhatsApp anytime you need help with an order.</p>
+<p style="margin:0;"><a href="${origin}/shop" style="display:inline-block;background:#1c1410;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-size:14px;">Browse the shop</a></p>`
+  );
+  const text = `Hi ${input.name},
+
+Your Mojiano account is ready. Shop at ${origin}/shop
+`;
+  return sendEmail({ to: input.email, subject: "Welcome to Mojiano", html, text });
+}
+async function notifyOrderPaid(order) {
+  const origin = storeUrl();
+  const lines = order.items.map(
+    (item) => `<tr><td style="padding:8px 0;border-bottom:1px solid #eadfd6;">${escapeHtml(item.name)} \xD7 ${item.quantity}</td>
+<td style="padding:8px 0;border-bottom:1px solid #eadfd6;text-align:right;">${formatGBP(item.totalPrice)}</td></tr>`
+  ).join("");
+  const html = layout(
+    `Order ${escapeHtml(order.orderNumber)} confirmed`,
+    `<p style="margin:0 0 12px;line-height:1.55;">Hi ${escapeHtml(order.fullName)},</p>
+<p style="margin:0 0 16px;line-height:1.55;">Thanks \u2014 we've received your payment. Here's what you bought:</p>
+<table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;margin-bottom:16px;">${lines}</table>
+<p style="margin:0 0 4px;font-size:14px;"><strong>Delivery:</strong> ${escapeHtml(order.deliveryMethod)}</p>
+<p style="margin:0 0 16px;font-size:14px;"><strong>Total paid:</strong> ${formatGBP(order.total)}</p>
+<p style="margin:0;"><a href="${origin}/account" style="color:#a8843d;">View your orders</a></p>`
+  );
+  const text = `Order ${order.orderNumber} confirmed
+
+` + order.items.map((i) => `${i.name} \xD7 ${i.quantity} \u2014 ${formatGBP(i.totalPrice)}`).join("\n") + `
+
+Total: ${formatGBP(order.total)}
+Delivery: ${order.deliveryMethod}
+`;
+  await sendEmail({
+    to: order.email,
+    subject: `Mojiano order ${order.orderNumber} \u2014 payment received`,
+    html,
+    text
+  });
+  const adminTo = process.env.ADMIN_EMAIL?.trim() || process.env.ORDER_ALERT_EMAIL?.trim();
+  if (adminTo && adminTo.toLowerCase() !== order.email.toLowerCase()) {
+    await sendEmail({
+      to: adminTo,
+      subject: `New paid order ${order.orderNumber} \u2014 ${formatGBP(order.total)}`,
+      html: layout(
+        "New paid order",
+        `<p style="margin:0 0 12px;line-height:1.55;"><strong>${escapeHtml(order.fullName)}</strong> \xB7 ${escapeHtml(order.email)}</p>
+<p style="margin:0 0 8px;">${escapeHtml(order.phone || "No phone")}</p>
+<p style="margin:0 0 16px;font-size:14px;">Total ${formatGBP(order.total)} \xB7 ${escapeHtml(order.deliveryMethod)}</p>
+<p style="margin:0;"><a href="${origin}/admin/orders">Open orders in admin</a></p>`
+      ),
+      text: `New paid order ${order.orderNumber}
+${order.fullName} \xB7 ${order.email}
+Total ${formatGBP(order.total)}`
+    });
+  }
+}
+function escapeHtml(value) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
 // server/stripe.ts
 import Stripe from "stripe";
 function stripeEnabled() {
@@ -468,18 +705,12 @@ function getStripe() {
   if (!key) throw new Error("Card payments are not configured.");
   return new Stripe(key);
 }
-function storeUrl() {
-  const fromEnv = process.env.SITE_URL?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
-  if (process.env.VERCEL_ENV === "production") return "https://mojiano.co.uk";
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3002";
-}
 async function createStripeCheckoutSession(input) {
   const stripe = getStripe();
   const origin = storeUrl();
   const lineItems = input.lines.filter((line) => line.unitAmount > 0 && line.quantity > 0).map((line) => {
-    const image = line.image && line.image.startsWith("http") ? line.image : void 0;
+    const rawImage = line.image ? resolveImageUrl(line.image) : void 0;
+    const image = rawImage && rawImage.startsWith("http") ? rawImage : void 0;
     return {
       quantity: line.quantity,
       price_data: {
@@ -533,18 +764,37 @@ async function markOrderPaidFromSession(session) {
   if (!orderNumber) return null;
   const paid = session.payment_status === "paid" || session.status === "complete";
   if (!paid) return null;
+  const existing = await prisma.order.findUnique({
+    where: { orderNumber },
+    include: { items: true }
+  });
+  if (!existing) return null;
+  if (existing.paymentStatus === "PAID") return existing;
   const intent = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
-  return prisma.order.update({
+  const updated = await prisma.order.update({
     where: { orderNumber },
     data: {
       paymentStatus: "PAID",
+      status: existing.status === "PENDING" ? "CONFIRMED" : existing.status,
       stripePaymentId: intent || session.id
-    }
+    },
+    include: { items: true }
   });
+  void notifyOrderPaid(updated).catch((error) => {
+    console.error("[email:order]", error instanceof Error ? error.message : error);
+  });
+  return updated;
 }
 
 // server/index.ts
 var app = express();
+app.use((req, _res, next) => {
+  const forwarded = String(req.headers["x-forwarded-uri"] ?? "").split("?")[0];
+  if (forwarded.startsWith("/api/") && req.path !== forwarded) {
+    req.url = String(req.headers["x-forwarded-uri"]);
+  }
+  next();
+});
 app.get("/api/ready", (_req, res) => {
   res.json({ ok: true, ready: true });
 });
@@ -552,6 +802,7 @@ var PORT = Number(process.env.PORT ?? 4e3);
 var isProd = process.env.NODE_ENV === "production";
 var orderCode = customAlphabet2("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 var adminGetMemo = /* @__PURE__ */ new Map();
+var shopMemo = /* @__PURE__ */ new Map();
 var ADMIN_GET_TTL = 12e3;
 function readAdminMemo(key) {
   const hit = adminGetMemo.get(key);
@@ -617,7 +868,7 @@ function parseVariants(body, productSku) {
   }).filter((row) => Boolean(row));
 }
 app.use(cors({ origin: true, credentials: true }));
-app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+async function handleStripeWebhook(req, res) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
     res.status(501).json({ error: "Stripe webhook is not configured." });
@@ -637,7 +888,9 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Invalid webhook." });
   }
-});
+}
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
+app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use("/uploads/products", express.static(UPLOAD_DIR));
@@ -647,7 +900,10 @@ app.use("/api/uploads", express.static(path2.join(process.cwd(), "public", "uplo
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.path.startsWith("/api/admin") && !req.path.startsWith("/api/admin/auth")) {
     res.on("finish", () => {
-      if (res.statusCode < 400) adminGetMemo.clear();
+      if (res.statusCode < 400) {
+        adminGetMemo.clear();
+        shopMemo.clear();
+      }
     });
   }
   next();
@@ -673,8 +929,17 @@ app.get("/api/health", async (_req, res) => {
     });
   }
 });
+async function remember(key, ttlMs, load) {
+  const hit = shopMemo.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+  const value = await load();
+  shopMemo.set(key, { at: Date.now(), value });
+  return value;
+}
 async function settings() {
-  return await prisma.siteSettings.findUnique({ where: { id: "default" } }) ?? await prisma.siteSettings.create({ data: { id: "default" } });
+  return remember("settings", 2e4, async () => {
+    return await prisma.siteSettings.findUnique({ where: { id: "default" } }) ?? await prisma.siteSettings.create({ data: { id: "default" } });
+  });
 }
 function cookieOptions() {
   return {
@@ -685,11 +950,13 @@ function cookieOptions() {
     maxAge: 1e3 * 60 * 60 * 24 * 14
   };
 }
-function publicCache(res, seconds = 45) {
-  res.set("Cache-Control", `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 6}`);
+function publicCache(res, seconds = 60) {
+  res.set("Cache-Control", `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 8}`);
 }
-function setAuthCookie(res, user) {
-  res.cookie(CUSTOMER_COOKIE, signUser(user), cookieOptions());
+function setAuthCookie(req, res, user) {
+  const token = signUser(user);
+  res.cookie(CUSTOMER_COOKIE, token, cookieOptions());
+  req.cookies = { ...req.cookies ?? {}, [CUSTOMER_COOKIE]: token };
 }
 function setStaffCookie(res, user) {
   res.cookie(STAFF_COOKIE, signUser(user), cookieOptions());
@@ -698,7 +965,7 @@ app.get("/api/bootstrap", async (req, res) => {
   try {
     const [site, categories, cart] = await Promise.all([
       settings(),
-      getVisibleCategories(),
+      remember("categories", 2e4, getVisibleCategories),
       getCart(req)
     ]);
     const summary = summariseCart(cart);
@@ -707,7 +974,8 @@ app.get("/api/bootstrap", async (req, res) => {
       settings: site,
       categories,
       user: readUser(req),
-      cart: { count: summary.count, subtotal: summary.subtotal }
+      cart: { count: summary.count, subtotal: summary.subtotal },
+      card: stripeEnabled()
     });
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Shop unavailable." });
@@ -715,14 +983,17 @@ app.get("/api/bootstrap", async (req, res) => {
 });
 app.get("/api/home", async (_req, res) => {
   try {
-    const [site, categories, collections, content] = await Promise.all([
-      settings(),
-      getVisibleCategories(),
-      getHomeCollections(),
-      prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } })
-    ]);
-    publicCache(res);
-    res.json({ settings: site, categories, collections, content });
+    const payload = await remember("home", 25e3, async () => {
+      const [site, categories, collections, content] = await Promise.all([
+        settings(),
+        remember("categories", 2e4, getVisibleCategories),
+        getHomeCollections(),
+        prisma.siteContent.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } })
+      ]);
+      return { settings: site, categories, collections, content };
+    });
+    publicCache(res, 90);
+    res.json(payload);
   } catch (error) {
     res.status(503).json({ error: error instanceof Error ? error.message : "Catalogue unavailable." });
   }
@@ -831,7 +1102,7 @@ app.delete("/api/cart/:id", async (req, res) => {
   await prisma.cartItem.deleteMany({ where: { id: param(req.params.id), cartId: cart.id } });
   res.json(summariseCart(await loadCart(cart.id)));
 });
-app.post("/api/auth/register", async (req, res) => {
+async function registerCustomer(req, res) {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid details." });
@@ -854,10 +1125,20 @@ app.post("/api/auth/register", async (req, res) => {
       role: "CUSTOMER"
     }
   });
-  setAuthCookie(res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  try {
+    await claimGuestCart(req);
+  } catch (error) {
+    console.error(error);
+  }
+  void sendWelcomeEmail({ name: user.name, email: user.email }).catch((error) => {
+    console.error("[email:welcome]", error instanceof Error ? error.message : error);
+  });
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
-});
-app.post("/api/auth/login", async (req, res) => {
+}
+app.post("/api/auth/register", registerCustomer);
+app.post("/api/register", registerCustomer);
+async function loginCustomer(req, res) {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Incorrect email or password." });
@@ -873,17 +1154,28 @@ app.post("/api/auth/login", async (req, res) => {
     res.status(400).json({ error: "Incorrect email or password." });
     return;
   }
-  setAuthCookie(res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+  try {
+    await claimGuestCart(req);
+  } catch (error) {
+    console.error(error);
+  }
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
-});
-app.post("/api/auth/logout", (_req, res) => {
+}
+app.post("/api/auth/login", loginCustomer);
+app.post("/api/login", loginCustomer);
+function logoutCustomer(_req, res) {
   res.clearCookie(CUSTOMER_COOKIE, { path: "/" });
   res.json({ ok: true });
-});
-app.get("/api/auth/me", (req, res) => {
+}
+app.post("/api/auth/logout", logoutCustomer);
+app.post("/api/logout", logoutCustomer);
+function readCustomer(req, res) {
   res.json(readUser(req));
-});
-app.post("/api/admin/auth/login", async (req, res) => {
+}
+app.get("/api/auth/me", readCustomer);
+app.get("/api/me", readCustomer);
+async function loginStaff(req, res) {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Incorrect email or password." });
@@ -901,18 +1193,26 @@ app.post("/api/admin/auth/login", async (req, res) => {
   }
   setStaffCookie(res, { id: user.id, email: user.email, name: user.name, role: user.role });
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
-});
-app.post("/api/admin/auth/logout", (_req, res) => {
+}
+app.post("/api/admin/auth/login", loginStaff);
+app.post("/api/staff-login", loginStaff);
+function logoutStaff(_req, res) {
   res.clearCookie(STAFF_COOKIE, { path: "/" });
   res.json({ ok: true });
-});
-app.get("/api/admin/auth/me", (req, res) => {
+}
+app.post("/api/admin/auth/logout", logoutStaff);
+app.post("/api/staff-logout", logoutStaff);
+function readStaffSession(req, res) {
   res.json(readStaff(req));
-});
-app.get("/api/payments/config", (_req, res) => {
+}
+app.get("/api/admin/auth/me", readStaffSession);
+app.get("/api/staff-me", readStaffSession);
+function paymentConfig(_req, res) {
   res.json({ card: stripeEnabled() });
-});
-app.get("/api/checkout/confirm", async (req, res) => {
+}
+app.get("/api/payments/config", paymentConfig);
+app.get("/api/pay-config", paymentConfig);
+async function confirmCheckout(req, res) {
   const sessionId = String(req.query.session_id ?? "");
   if (!sessionId.startsWith("cs_")) {
     res.status(400).json({ error: "Missing payment session." });
@@ -931,17 +1231,21 @@ app.get("/api/checkout/confirm", async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Could not confirm payment." });
   }
-});
-app.post("/api/checkout", async (req, res) => {
+}
+app.get("/api/checkout/confirm", confirmCheckout);
+app.get("/api/pay-confirm", confirmCheckout);
+app.post("/api/checkout", requireUser, async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Please check your details." });
     return;
   }
-  if (parsed.data.paymentMethod === "CARD" && !stripeEnabled()) {
+  const payByCard = stripeEnabled();
+  if (!payByCard) {
     res.status(400).json({ error: "Card payments are not configured." });
     return;
   }
+  await claimGuestCart(req);
   const cart = await getCart(req);
   if (!cart || cart.items.length === 0) {
     res.status(400).json({ error: "Your basket is empty." });
@@ -959,18 +1263,17 @@ app.post("/api/checkout", async (req, res) => {
     }
   }
   const deliveryFee = parsed.data.deliveryMethod === "Collection" ? 0 : parsed.data.deliveryMethod === "Express" ? site.expressDeliveryFee : summary.subtotal >= site.freeDeliveryThreshold ? 0 : site.standardDeliveryFee;
-  const user = readUser(req);
-  const payByCard = parsed.data.paymentMethod === "CARD";
+  const user = req.user;
   const created = await prisma.$transaction(async (tx) => {
     const order = await tx.order.create({
       data: {
         orderNumber: `MJ-${orderCode()}`,
-        userId: user?.id,
-        email: parsed.data.email.toLowerCase(),
+        userId: user.id,
+        email: user.email,
         phone: parsed.data.phone,
         fullName: parsed.data.fullName,
-        paymentMethod: parsed.data.paymentMethod,
-        paymentStatus: payByCard ? "PENDING" : "UNPAID",
+        paymentMethod: "CARD",
+        paymentStatus: "PENDING",
         status: "PENDING",
         subtotal: summary.subtotal,
         discount,
@@ -1007,68 +1310,64 @@ app.post("/api/checkout", async (req, res) => {
         });
       }
     }
-    if (!payByCard) {
-      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-    }
     return order;
   });
-  if (payByCard) {
-    try {
-      const session = await createStripeCheckoutSession({
-        orderId: created.id,
-        orderNumber: created.orderNumber,
-        email: created.email,
-        total: created.total,
-        deliveryFee: created.deliveryFee,
-        discount: created.discount,
-        lines: summary.items.map((item) => ({
-          name: item.product.name,
-          quantity: item.quantity,
-          unitAmount: item.unitPrice,
-          image: item.product.images[0]?.url
-        }))
-      });
-      await prisma.order.update({
-        where: { id: created.id },
-        data: { stripePaymentId: session.id }
-      });
-      await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-      res.clearCookie("mojiano_sid");
-      res.json({ ok: true, orderNumber: created.orderNumber, total: created.total, checkoutUrl: session.url });
-      return;
-    } catch (error) {
-      await prisma.$transaction(async (tx) => {
-        const order = await tx.order.findUnique({ where: { id: created.id }, include: { items: true } });
-        if (!order) return;
-        for (const item of order.items) {
-          if (item.variantId) {
-            await tx.productVariant.update({
-              where: { id: item.variantId },
-              data: { stock: { increment: item.quantity } }
-            });
-          } else {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stockQuantity: { increment: item.quantity } }
-            });
-          }
-        }
-        await tx.order.delete({ where: { id: created.id } });
-      });
-      res.status(500).json({ error: error instanceof Error ? error.message : "Could not start card payment." });
-      return;
+  try {
+    const session = await createStripeCheckoutSession({
+      orderId: created.id,
+      orderNumber: created.orderNumber,
+      email: created.email,
+      total: created.total,
+      deliveryFee: created.deliveryFee,
+      discount: created.discount,
+      lines: summary.items.map((item) => ({
+        name: item.product.name,
+        quantity: item.quantity,
+        unitAmount: item.unitPrice,
+        image: item.product.images[0]?.url
+      }))
+    });
+    if (!session.url) {
+      throw new Error("Stripe did not return a checkout page.");
     }
+    await prisma.order.update({
+      where: { id: created.id },
+      data: { stripePaymentId: session.id }
+    });
+    await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+    res.clearCookie("mojiano_sid");
+    res.json({ ok: true, orderNumber: created.orderNumber, total: created.total, checkoutUrl: session.url });
+  } catch (error) {
+    await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: created.id }, include: { items: true } });
+      if (!order) return;
+      for (const item of order.items) {
+        if (item.variantId) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: item.quantity } }
+          });
+        } else {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stockQuantity: { increment: item.quantity } }
+          });
+        }
+      }
+      await tx.order.delete({ where: { id: created.id } });
+    });
+    res.status(500).json({ error: error instanceof Error ? error.message : "Could not start card payment." });
   }
-  res.clearCookie("mojiano_sid");
-  res.json({ ok: true, orderNumber: created.orderNumber, total: created.total });
 });
-app.get("/api/account/orders", requireUser, async (req, res) => {
+async function listMyOrders(req, res) {
   const orders = await prisma.order.findMany({
     where: { userId: req.user.id },
     orderBy: { createdAt: "desc" }
   });
   res.json(orders);
-});
+}
+app.get("/api/account/orders", requireUser, listMyOrders);
+app.get("/api/my-orders", requireUser, listMyOrders);
 app.get("/api/account/orders/:orderNumber", requireUser, async (req, res) => {
   const order = await prisma.order.findFirst({
     where: { orderNumber: param(req.params.orderNumber), userId: req.user.id },
@@ -1114,17 +1413,18 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
         COUNT(*) FILTER (WHERE "paymentStatus" IN ('UNPAID', 'PENDING') AND status NOT IN ('CANCELLED', 'REFUNDED'))::int AS "awaitingCount",
         COUNT(*) FILTER (WHERE status IN ('PENDING', 'CONFIRMED', 'PROCESSING'))::int AS "openOrders",
         (SELECT COALESCE(json_object_agg(status, cnt), '{}'::json) FROM (
-          SELECT status::text AS status, COUNT(*)::int AS cnt FROM "Order" GROUP BY status
+          SELECT status::text AS status, COUNT(*)::int AS cnt FROM "Order" WHERE "paymentStatus" = 'PAID' GROUP BY status
         ) grouped) AS pipeline,
         (SELECT COALESCE(json_agg(json_build_object('day', day, 'orders', orders, 'revenue', revenue)), '[]'::json) FROM (
           SELECT (("createdAt" AT TIME ZONE 'Europe/London')::date) AS day,
                  COUNT(*)::int AS orders,
                  COALESCE(SUM(total), 0)::int AS revenue
           FROM "Order"
-          WHERE "createdAt" >= ${weekStart}
+          WHERE "createdAt" >= ${weekStart} AND "paymentStatus" = 'PAID'
           GROUP BY 1
         ) days) AS pulse
       FROM "Order"
+      WHERE "paymentStatus" = 'PAID'
     `,
     prisma.$queryRaw`
       SELECT
@@ -1141,6 +1441,7 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
     `,
     prisma.user.count({ where: { role: "CUSTOMER" } }),
     prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
       orderBy: { createdAt: "desc" },
       take: 8,
       select: {
@@ -1526,10 +1827,11 @@ app.get("/api/admin/orders", requireAdmin, async (_req, res) => {
     res,
     "orders",
     () => prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
       orderBy: { createdAt: "desc" },
       take: 120,
       include: {
-        items: { select: { id: true, name: true, sku: true, quantity: true, unitPrice: true, image: true } }
+        items: { select: { id: true, name: true, sku: true, quantity: true, unitPrice: true, totalPrice: true, image: true } }
       }
     })
   );
@@ -1652,6 +1954,9 @@ app.put("/api/admin/settings", requireAdmin, async (req, res) => {
     create: { id: "default", ...req.body }
   });
   res.json(site);
+});
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found." });
 });
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -52,7 +52,13 @@ export function Footer() {
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Visit</p>
           <p className="mt-4 whitespace-pre-line text-sm text-muted">{String(settings.address ?? "")}</p>
           <p className="mt-3 text-sm">{String(settings.email ?? "")}</p>
-          <p className="text-sm">{String(settings.phone ?? "")}</p>
+          {settings.phone ? (
+            <p className="text-sm">
+              <a href={`tel:${String(settings.phone).replace(/[^\d+]/g, "")}`} className="hover:text-gold-deep">
+                {String(settings.phone)}
+              </a>
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="border-t border-line">

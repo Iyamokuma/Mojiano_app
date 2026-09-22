@@ -164,7 +164,7 @@ export function AdminShell() {
   }, []);
 
   async function logout() {
-    await api("/api/admin/auth/logout", { method: "POST" });
+    await api("/api/staff-logout", { method: "POST" });
     await refresh();
     navigate("/admin");
   }

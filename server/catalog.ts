@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { resolveCategoryImage, withFixedProductImages } from "../src/lib/media";
 import { prisma } from "./db";
 
 function contains(q: string): Prisma.StringFilter {
@@ -22,11 +23,41 @@ export const productCardSelect = {
   ratingAvg: true,
   reviewCount: true,
   category: { select: { name: true, slug: true } },
-  images: { orderBy: { sortOrder: "asc" as const }, take: 2, select: { url: true, alt: true } },
+  images: { orderBy: { sortOrder: "asc" as const }, take: 1, select: { url: true, alt: true } },
 } satisfies Prisma.ProductSelect;
 
+function withFixedCategory<
+  T extends {
+    slug: string;
+    image?: string | null;
+    children?: Array<{ slug: string; image?: string | null }>;
+    parent?: { slug: string; image?: string | null } | null;
+  },
+>(category: T): T {
+  return {
+    ...category,
+    image: resolveCategoryImage(category.slug, category.image ?? null),
+    ...(category.children
+      ? {
+          children: category.children.map((child) => ({
+            ...child,
+            image: resolveCategoryImage(child.slug, child.image ?? null),
+          })),
+        }
+      : {}),
+    ...(category.parent
+      ? {
+          parent: {
+            ...category.parent,
+            image: resolveCategoryImage(category.parent.slug, category.parent.image ?? null),
+          },
+        }
+      : {}),
+  };
+}
+
 export async function getVisibleCategories() {
-  return prisma.category.findMany({
+  const categories = await prisma.category.findMany({
     where: { isVisible: true, deletedAt: null, parentId: null },
     orderBy: { sortOrder: "asc" },
     include: {
@@ -36,16 +67,18 @@ export async function getVisibleCategories() {
       },
     },
   });
+  return categories.map((category) => withFixedCategory(category));
 }
 
 export async function getCategoryBySlug(slug: string) {
-  return prisma.category.findFirst({
+  const category = await prisma.category.findFirst({
     where: { slug, deletedAt: null, isVisible: true },
     include: {
       children: { where: { isVisible: true, deletedAt: null }, orderBy: { sortOrder: "asc" } },
       parent: true,
     },
   });
+  return category ? withFixedCategory(category) : category;
 }
 
 export async function queryProducts(input: {
@@ -157,7 +190,7 @@ export async function queryProducts(input: {
   ]);
 
   return {
-    products,
+    products: products.map((product) => withFixedProductImages(product)),
     total,
     page,
     pageSize,
@@ -175,7 +208,7 @@ export async function queryProducts(input: {
 }
 
 export async function getProductBySlug(slug: string) {
-  return prisma.product.findFirst({
+  const product = await prisma.product.findFirst({
     where: { slug, isActive: true, deletedAt: null },
     include: {
       category: true,
@@ -189,14 +222,16 @@ export async function getProductBySlug(slug: string) {
       },
     },
   });
+  return product ? withFixedProductImages(product) : product;
 }
 
 export async function getRelatedProducts(productId: string, categoryId: string) {
-  return prisma.product.findMany({
+  const products = await prisma.product.findMany({
     where: { id: { not: productId }, categoryId, isActive: true, deletedAt: null },
     take: 4,
     select: productCardSelect,
   });
+  return products.map((product) => withFixedProductImages(product));
 }
 
 export async function getHomeCollections() {
@@ -212,5 +247,10 @@ export async function getHomeCollections() {
     }),
     prisma.product.findMany({ where: { bestSeller: true, isActive: true, deletedAt: null }, take: 8, select }),
   ]);
-  return { featured, clearance, newArrivals, bestSellers };
+  return {
+    featured: featured.map((product) => withFixedProductImages(product)),
+    clearance: clearance.map((product) => withFixedProductImages(product)),
+    newArrivals: newArrivals.map((product) => withFixedProductImages(product)),
+    bestSellers: bestSellers.map((product) => withFixedProductImages(product)),
+  };
 }

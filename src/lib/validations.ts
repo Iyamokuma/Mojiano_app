@@ -37,7 +37,7 @@ export const checkoutSchema = z.object({
   postcode: z.string().trim().min(5, "Enter a valid postcode."),
   country: z.string().trim().default("United Kingdom"),
   deliveryMethod: z.enum(["Standard", "Express", "Collection"]),
-  paymentMethod: z.enum(["CARD", "BANK_TRANSFER", "CASH_ON_DELIVERY"]),
+  paymentMethod: z.enum(["CARD", "BANK_TRANSFER", "CASH_ON_DELIVERY"]).default("CARD"),
   notes: z.string().trim().max(500).optional(),
   promoCode: z.string().trim().optional(),
 });
