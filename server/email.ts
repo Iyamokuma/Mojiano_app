@@ -54,16 +54,32 @@ ${inner}
 </td></tr></table></td></tr></table></body></html>`;
 }
 
-export async function sendWelcomeEmail(input: { name: string; email: string }) {
-  const origin = storeUrl();
+function button(href: string, label: string) {
+  return `<p style="margin:0;"><a href="${href}" style="display:inline-block;background:#1c1410;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-size:14px;">${label}</a></p>`;
+}
+
+export async function sendVerifyEmail(input: { name: string; email: string; link: string }) {
   const html = layout(
-    "Welcome to Mojiano",
+    "Welcome to Mojiano — confirm your email",
     `<p style="margin:0 0 12px;line-height:1.55;">Hi ${escapeHtml(input.name)},</p>
-<p style="margin:0 0 16px;line-height:1.55;">Your account is ready. Browse wholesale clearance stock, checkout online, and message us on WhatsApp anytime you need help with an order.</p>
-<p style="margin:0;"><a href="${origin}/shop" style="display:inline-block;background:#1c1410;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-size:14px;">Browse the shop</a></p>`,
+<p style="margin:0 0 16px;line-height:1.55;">Your account is ready. Please confirm this is your email address so we can send order updates safely. The link works for 3 days.</p>
+${button(input.link, "Confirm my email")}
+<p style="margin:16px 0 0;font-size:12px;color:#7a6c64;line-height:1.5;">If you didn't create a Mojiano account, you can ignore this email.</p>`,
   );
-  const text = `Hi ${input.name},\n\nYour Mojiano account is ready. Shop at ${origin}/shop\n`;
-  return sendEmail({ to: input.email, subject: "Welcome to Mojiano", html, text });
+  const text = `Hi ${input.name},\n\nConfirm your Mojiano email address:\n${input.link}\n\nThe link works for 3 days.\n`;
+  return sendEmail({ to: input.email, subject: "Confirm your Mojiano email", html, text });
+}
+
+export async function sendPasswordResetEmail(input: { name: string; email: string; link: string }) {
+  const html = layout(
+    "Reset your password",
+    `<p style="margin:0 0 12px;line-height:1.55;">Hi ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 16px;line-height:1.55;">We received a request to reset your Mojiano password. The link works once and expires in 1 hour.</p>
+${button(input.link, "Choose a new password")}
+<p style="margin:16px 0 0;font-size:12px;color:#7a6c64;line-height:1.5;">If you didn't ask for this, you can ignore this email — your password won't change.</p>`,
+  );
+  const text = `Hi ${input.name},\n\nReset your Mojiano password (expires in 1 hour):\n${input.link}\n\nIf you didn't ask for this, ignore this email.\n`;
+  return sendEmail({ to: input.email, subject: "Reset your Mojiano password", html, text });
 }
 
 type OrderWithItems = Order & { items: OrderItem[] };

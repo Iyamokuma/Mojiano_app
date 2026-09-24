@@ -46,6 +46,9 @@ var prisma = globalForPrisma.prisma ?? new Proxy({}, {
   }
 });
 
+// server/index.ts
+import { createHash, randomBytes } from "crypto";
+
 // server/auth.ts
 import jwt from "jsonwebtoken";
 var SECRET = process.env.AUTH_SECRET ?? "dev-only-change-me";
@@ -53,6 +56,17 @@ var CUSTOMER_COOKIE = "mojiano_token";
 var STAFF_COOKIE = "mojiano_staff";
 function signUser(user) {
   return jwt.sign(user, SECRET, { expiresIn: "14d" });
+}
+function signPurposeToken(purpose, payload, expiresIn) {
+  return jwt.sign({ ...payload, purpose }, SECRET, { expiresIn });
+}
+function readPurposeToken(token, purpose) {
+  try {
+    const data = jwt.verify(token, SECRET);
+    return data.purpose === purpose ? data : null;
+  } catch {
+    return null;
+  }
 }
 function readCookie(req, name) {
   const token = req.cookies?.[name];
@@ -542,6 +556,12 @@ import { twMerge } from "tailwind-merge";
 function slugify(value) {
   return value.toLowerCase().trim().replace(/['"]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
+function safeNextPath(value, fallback = "/account") {
+  if (!value) return fallback;
+  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return fallback;
+  if (value.startsWith("/admin")) return fallback;
+  return value;
+}
 
 // server/upload.ts
 import fs from "node:fs";
@@ -631,19 +651,42 @@ ${inner}
 <p style="margin:24px 0 0;font-size:12px;color:#7a6c64;line-height:1.5;">Mojiano Wholesale Clearance \xB7 London</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
-async function sendWelcomeEmail(input) {
-  const origin = storeUrl();
+function button(href, label) {
+  return `<p style="margin:0;"><a href="${href}" style="display:inline-block;background:#1c1410;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-size:14px;">${label}</a></p>`;
+}
+async function sendVerifyEmail(input) {
   const html = layout(
-    "Welcome to Mojiano",
+    "Welcome to Mojiano \u2014 confirm your email",
     `<p style="margin:0 0 12px;line-height:1.55;">Hi ${escapeHtml(input.name)},</p>
-<p style="margin:0 0 16px;line-height:1.55;">Your account is ready. Browse wholesale clearance stock, checkout online, and message us on WhatsApp anytime you need help with an order.</p>
-<p style="margin:0;"><a href="${origin}/shop" style="display:inline-block;background:#1c1410;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-size:14px;">Browse the shop</a></p>`
+<p style="margin:0 0 16px;line-height:1.55;">Your account is ready. Please confirm this is your email address so we can send order updates safely. The link works for 3 days.</p>
+${button(input.link, "Confirm my email")}
+<p style="margin:16px 0 0;font-size:12px;color:#7a6c64;line-height:1.5;">If you didn't create a Mojiano account, you can ignore this email.</p>`
   );
   const text = `Hi ${input.name},
 
-Your Mojiano account is ready. Shop at ${origin}/shop
+Confirm your Mojiano email address:
+${input.link}
+
+The link works for 3 days.
 `;
-  return sendEmail({ to: input.email, subject: "Welcome to Mojiano", html, text });
+  return sendEmail({ to: input.email, subject: "Confirm your Mojiano email", html, text });
+}
+async function sendPasswordResetEmail(input) {
+  const html = layout(
+    "Reset your password",
+    `<p style="margin:0 0 12px;line-height:1.55;">Hi ${escapeHtml(input.name)},</p>
+<p style="margin:0 0 16px;line-height:1.55;">We received a request to reset your Mojiano password. The link works once and expires in 1 hour.</p>
+${button(input.link, "Choose a new password")}
+<p style="margin:16px 0 0;font-size:12px;color:#7a6c64;line-height:1.5;">If you didn't ask for this, you can ignore this email \u2014 your password won't change.</p>`
+  );
+  const text = `Hi ${input.name},
+
+Reset your Mojiano password (expires in 1 hour):
+${input.link}
+
+If you didn't ask for this, ignore this email.
+`;
+  return sendEmail({ to: input.email, subject: "Reset your Mojiano password", html, text });
 }
 async function notifyOrderPaid(order) {
   const origin = storeUrl();
@@ -965,17 +1008,19 @@ function setStaffCookie(res, user) {
 }
 app.get("/api/bootstrap", async (req, res) => {
   try {
-    const [site, categories, cart] = await Promise.all([
+    const me = readUser(req);
+    const [site, categories, cart, account] = await Promise.all([
       settings(),
       remember("categories", 3e3, getVisibleCategories),
-      getCart(req)
+      getCart(req),
+      me ? prisma.user.findUnique({ where: { id: me.id }, select: { emailVerified: true } }) : null
     ]);
     const summary = summariseCart(cart);
     res.set("Cache-Control", "private, no-store");
     res.json({
       settings: site,
       categories,
-      user: readUser(req),
+      user: me ? { ...me, verified: Boolean(account?.emailVerified) } : null,
       cart: { count: summary.count, subtotal: summary.subtotal },
       card: stripeEnabled()
     });
@@ -1133,11 +1178,123 @@ async function registerCustomer(req, res) {
   } catch (error) {
     console.error(error);
   }
-  void sendWelcomeEmail({ name: user.name, email: user.email }).catch((error) => {
-    console.error("[email:welcome]", error instanceof Error ? error.message : error);
-  });
+  await sendVerification(user, safeNextPath(String(req.body?.next ?? ""), "/shop"));
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
 }
+async function sendVerification(user, next) {
+  const token = signPurposeToken("verify-email", { uid: user.id, email: user.email, next }, "3d");
+  try {
+    await sendVerifyEmail({
+      name: user.name,
+      email: user.email,
+      link: `${storeUrl()}/verify-email?token=${encodeURIComponent(token)}`
+    });
+  } catch (error) {
+    console.error("[email:verify]", error instanceof Error ? error.message : error);
+  }
+}
+function hashResetToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+app.post("/api/auth/verify-email", async (req, res) => {
+  const data = readPurposeToken(String(req.body?.token ?? ""), "verify-email");
+  const user = data ? await prisma.user.findUnique({ where: { id: data.uid } }) : null;
+  if (!data || !user || user.email !== data.email) {
+    res.status(400).json({ error: "This verification link is invalid or has expired." });
+    return;
+  }
+  const alreadyVerified = Boolean(user.emailVerified);
+  if (!alreadyVerified) {
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: /* @__PURE__ */ new Date() } });
+  }
+  if (user.role === "CUSTOMER") {
+    setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+    try {
+      await claimGuestCart(req);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  res.json({ ok: true, name: user.name, alreadyVerified, next: safeNextPath(data.next, "/shop") });
+});
+app.post("/api/auth/resend-verification", requireUser, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user) {
+    res.status(404).json({ error: "Account not found." });
+    return;
+  }
+  if (user.emailVerified) {
+    res.json({ ok: true, alreadyVerified: true });
+    return;
+  }
+  if (!rateLimit(`verify-resend:${user.id}`, 3).ok) {
+    res.status(429).json({ error: "Please wait a few minutes before asking for another email." });
+    return;
+  }
+  await sendVerification(user, safeNextPath(String(req.body?.next ?? ""), "/shop"));
+  res.json({ ok: true });
+});
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+  const reply = { ok: true, message: "If an account exists for that email, we've sent a link to reset your password." };
+  if (!rateLimit(`forgot:${email}`, 3).ok) {
+    res.json(reply);
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (user) {
+    const token = randomBytes(32).toString("base64url");
+    await prisma.passwordResetToken.deleteMany({ where: { email } });
+    await prisma.passwordResetToken.create({
+      data: { email, token: hashResetToken(token), expires: new Date(Date.now() + 60 * 60 * 1e3) }
+    });
+    try {
+      await sendPasswordResetEmail({
+        name: user.name,
+        email: user.email,
+        link: `${storeUrl()}/reset-password?token=${encodeURIComponent(token)}`
+      });
+    } catch (error) {
+      console.error("[email:reset]", error instanceof Error ? error.message : error);
+    }
+  }
+  res.json(reply);
+});
+app.post("/api/auth/reset-password", async (req, res) => {
+  const password = registerSchema.shape.password.safeParse(req.body?.password);
+  if (!password.success) {
+    res.status(400).json({ error: password.error.issues[0]?.message ?? "Choose a stronger password." });
+    return;
+  }
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { token: hashResetToken(String(req.body?.token ?? "")) }
+  });
+  const user = record && record.expires > /* @__PURE__ */ new Date() ? await prisma.user.findUnique({ where: { email: record.email } }) : null;
+  if (!record || !user) {
+    res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+    return;
+  }
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await bcrypt.hash(password.data, 12), emailVerified: user.emailVerified ?? /* @__PURE__ */ new Date() }
+    }),
+    prisma.passwordResetToken.deleteMany({ where: { email: record.email } })
+  ]);
+  if (user.role === "CUSTOMER") {
+    setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+    try {
+      await claimGuestCart(req);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  res.json({ ok: true, role: user.role });
+});
 app.post("/api/auth/register", registerCustomer);
 app.post("/api/register", registerCustomer);
 async function loginCustomer(req, res) {

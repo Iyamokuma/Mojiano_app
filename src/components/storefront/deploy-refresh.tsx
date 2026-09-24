@@ -55,7 +55,7 @@ export function DeployRefreshBanner() {
       )}
     >
       <span className="mr-3">A newer version of Mojiano is available.</span>
-      <button type="button" className={buttonVariants({ variant: "secondary", size: "sm" })} onClick={() => window.location.reload()}>
+      <button type="button" className={buttonVariants({ variant: "peach", size: "sm" })} onClick={() => window.location.reload()}>
         Refresh
       </button>
     </div>

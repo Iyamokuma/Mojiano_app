@@ -7,7 +7,18 @@ import bcrypt from "bcryptjs";
 import { customAlphabet } from "nanoid";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { readStaff, readUser, requireAdmin, requireUser, signUser, CUSTOMER_COOKIE, STAFF_COOKIE } from "./auth";
+import { createHash, randomBytes } from "crypto";
+import {
+  readPurposeToken,
+  readStaff,
+  readUser,
+  requireAdmin,
+  requireUser,
+  signPurposeToken,
+  signUser,
+  CUSTOMER_COOKIE,
+  STAFF_COOKIE,
+} from "./auth";
 import { claimGuestCart, getCart, getOrCreateCart, loadCart, summariseCart } from "./cart";
 import {
   getCategoryBySlug,
@@ -19,9 +30,10 @@ import {
 } from "./catalog";
 import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../src/lib/validations";
 import { rateLimit } from "../src/lib/rate-limit";
-import { slugify } from "../src/lib/utils";
+import { safeNextPath, slugify } from "../src/lib/utils";
 import { productImageUpload, UPLOAD_DIR } from "./upload";
-import { sendWelcomeEmail } from "./email";
+import { sendPasswordResetEmail, sendVerifyEmail } from "./email";
+import { storeUrl } from "./site-url";
 import { createStripeCheckoutSession, getStripe, markOrderPaidFromSession, stripeEnabled } from "./stripe";
 
 const app = express();
@@ -230,17 +242,19 @@ function setStaffCookie(res: express.Response, user: { id: string; email: string
 
 app.get("/api/bootstrap", async (req, res) => {
   try {
-    const [site, categories, cart] = await Promise.all([
+    const me = readUser(req);
+    const [site, categories, cart, account] = await Promise.all([
       settings(),
       remember("categories", 3_000, getVisibleCategories),
       getCart(req),
+      me ? prisma.user.findUnique({ where: { id: me.id }, select: { emailVerified: true } }) : null,
     ]);
     const summary = summariseCart(cart);
     res.set("Cache-Control", "private, no-store");
     res.json({
       settings: site,
       categories,
-      user: readUser(req),
+      user: me ? { ...me, verified: Boolean(account?.emailVerified) } : null,
       cart: { count: summary.count, subtotal: summary.subtotal },
       card: stripeEnabled(),
     });
@@ -411,11 +425,129 @@ async function registerCustomer(req: express.Request, res: express.Response) {
   } catch (error) {
     console.error(error);
   }
-  void sendWelcomeEmail({ name: user.name, email: user.email }).catch((error) => {
-    console.error("[email:welcome]", error instanceof Error ? error.message : error);
-  });
+  await sendVerification(user, safeNextPath(String(req.body?.next ?? ""), "/shop"));
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
 }
+
+async function sendVerification(user: { id: string; email: string; name: string }, next: string) {
+  const token = signPurposeToken("verify-email", { uid: user.id, email: user.email, next }, "3d");
+  try {
+    await sendVerifyEmail({
+      name: user.name,
+      email: user.email,
+      link: `${storeUrl()}/verify-email?token=${encodeURIComponent(token)}`,
+    });
+  } catch (error) {
+    console.error("[email:verify]", error instanceof Error ? error.message : error);
+  }
+}
+
+function hashResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+app.post("/api/auth/verify-email", async (req, res) => {
+  const data = readPurposeToken<{ uid: string; email: string; next?: string }>(String(req.body?.token ?? ""), "verify-email");
+  const user = data ? await prisma.user.findUnique({ where: { id: data.uid } }) : null;
+  if (!data || !user || user.email !== data.email) {
+    res.status(400).json({ error: "This verification link is invalid or has expired." });
+    return;
+  }
+  const alreadyVerified = Boolean(user.emailVerified);
+  if (!alreadyVerified) {
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+  }
+  if (user.role === "CUSTOMER") {
+    setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+    try {
+      await claimGuestCart(req);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  res.json({ ok: true, name: user.name, alreadyVerified, next: safeNextPath(data.next, "/shop") });
+});
+
+app.post("/api/auth/resend-verification", requireUser, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user) {
+    res.status(404).json({ error: "Account not found." });
+    return;
+  }
+  if (user.emailVerified) {
+    res.json({ ok: true, alreadyVerified: true });
+    return;
+  }
+  if (!rateLimit(`verify-resend:${user.id}`, 3).ok) {
+    res.status(429).json({ error: "Please wait a few minutes before asking for another email." });
+    return;
+  }
+  await sendVerification(user, safeNextPath(String(req.body?.next ?? ""), "/shop"));
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+  const reply = { ok: true, message: "If an account exists for that email, we've sent a link to reset your password." };
+  if (!rateLimit(`forgot:${email}`, 3).ok) {
+    res.json(reply);
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (user) {
+    const token = randomBytes(32).toString("base64url");
+    await prisma.passwordResetToken.deleteMany({ where: { email } });
+    await prisma.passwordResetToken.create({
+      data: { email, token: hashResetToken(token), expires: new Date(Date.now() + 60 * 60 * 1000) },
+    });
+    try {
+      await sendPasswordResetEmail({
+        name: user.name,
+        email: user.email,
+        link: `${storeUrl()}/reset-password?token=${encodeURIComponent(token)}`,
+      });
+    } catch (error) {
+      console.error("[email:reset]", error instanceof Error ? error.message : error);
+    }
+  }
+  res.json(reply);
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const password = registerSchema.shape.password.safeParse(req.body?.password);
+  if (!password.success) {
+    res.status(400).json({ error: password.error.issues[0]?.message ?? "Choose a stronger password." });
+    return;
+  }
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { token: hashResetToken(String(req.body?.token ?? "")) },
+  });
+  const user = record && record.expires > new Date() ? await prisma.user.findUnique({ where: { email: record.email } }) : null;
+  if (!record || !user) {
+    res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+    return;
+  }
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await bcrypt.hash(password.data, 12), emailVerified: user.emailVerified ?? new Date() },
+    }),
+    prisma.passwordResetToken.deleteMany({ where: { email: record.email } }),
+  ]);
+  if (user.role === "CUSTOMER") {
+    setAuthCookie(req, res, { id: user.id, email: user.email, name: user.name, role: user.role });
+    try {
+      await claimGuestCart(req);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  res.json({ ok: true, role: user.role });
+});
 
 app.post("/api/auth/register", registerCustomer);
 app.post("/api/register", registerCustomer);

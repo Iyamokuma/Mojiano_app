@@ -16,6 +16,19 @@ export function signUser(user: AuthUser) {
   return jwt.sign(user, SECRET, { expiresIn: "14d" });
 }
 
+export function signPurposeToken(purpose: string, payload: Record<string, string>, expiresIn: `${number}${"m" | "h" | "d"}`) {
+  return jwt.sign({ ...payload, purpose }, SECRET, { expiresIn });
+}
+
+export function readPurposeToken<T extends Record<string, string>>(token: string, purpose: string): T | null {
+  try {
+    const data = jwt.verify(token, SECRET) as T & { purpose?: string };
+    return data.purpose === purpose ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 function readCookie(req: Request, name: string): AuthUser | null {
   const token = req.cookies?.[name] as string | undefined;
   if (!token) return null;

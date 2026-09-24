@@ -10,13 +10,18 @@ import { DeployRefreshBanner } from "@/components/storefront/deploy-refresh";
 import { HomeHero } from "@/components/storefront/hero";
 import { CategoryCatalog } from "@/components/storefront/category-catalog";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input, Label, Select, Textarea, FieldError } from "@/components/ui/field";
+import { Input, Label, PasswordInput, Select, Textarea, FieldError } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/feedback";
+import { FlashBanner } from "@/components/storefront/flash-banner";
+import { OrderSummary, type OrderDetail } from "@/components/storefront/order-summary";
 import { useShop } from "@/context/shop";
 import { api, peekApi } from "@/lib/api";
 import { resolveImageUrl } from "@/lib/media";
 import { formatGBP } from "@/lib/money";
+import { lastPage, setFlash } from "@/lib/navigation-memory";
 import { cn, safeNextPath } from "@/lib/utils";
+import { CheckCircle2 } from "lucide-react";
+import { ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/auth";
 const AdminAuthLayout = lazy(() => import("@/context/admin").then((module) => ({ default: module.AdminAuthLayout })));
 const AdminGate = lazy(() => import("@/pages/admin").then((module) => ({ default: module.AdminGate })));
 const ProductPage = lazy(() => import("@/pages/product").then((module) => ({ default: module.ProductPage })));
@@ -38,6 +43,7 @@ function StoreLayout() {
         </div>
       ) : null}
       <HeaderNav categories={categories} cartCount={cartCount} signedIn={Boolean(user)} />
+      <FlashBanner />
       <main className="flex-1">
         <Outlet />
       </main>
@@ -294,30 +300,113 @@ function CheckoutPage() {
   );
 }
 
+const PAYMENT_CHECKS = 8;
+
 function ConfirmationPage() {
   const { orderNumber } = useParams();
+  const { user } = useShop();
   const [params] = useSearchParams();
   const sessionId = params.get("session_id");
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(sessionId ? null : "UNKNOWN");
+  const [order, setOrder] = useState<OrderDetail | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
-    void api<{ paymentStatus: string }>("/api/pay-confirm?session_id=" + encodeURIComponent(sessionId))
-      .then((result) => setStatus(result.paymentStatus))
-      .catch(() => setStatus("PENDING"));
+    let cancelled = false;
+    let timer: number | undefined;
+    async function check(attempt: number) {
+      try {
+        const result = await api<{ paymentStatus: string }>("/api/pay-confirm?session_id=" + encodeURIComponent(sessionId!));
+        if (cancelled) return;
+        if (result.paymentStatus === "PAID" || attempt >= PAYMENT_CHECKS) {
+          setStatus(result.paymentStatus);
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        if (attempt >= PAYMENT_CHECKS) {
+          setStatus("PENDING");
+          return;
+        }
+      }
+      timer = window.setTimeout(() => void check(attempt + 1), 2500);
+    }
+    void check(1);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [sessionId]);
 
-  const paid = status === "PAID";
-  const waiting = Boolean(sessionId) && !status;
+  useEffect(() => {
+    if (!orderNumber || !user || !status) return;
+    void api<OrderDetail>(`/api/account/orders/${encodeURIComponent(orderNumber)}`)
+      .then(setOrder)
+      .catch(() => setOrder(null));
+  }, [orderNumber, user, status]);
+
+  if (!status) {
+    return (
+      <div className="container-narrow py-24 text-center">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-line border-t-ink" />
+        <h1 className="mt-6 font-display text-3xl">Confirming your payment…</h1>
+        <p className="mt-3 text-sm text-muted">This only takes a moment. Please don't close this page.</p>
+      </div>
+    );
+  }
+
+  const paid = status === "PAID" || order?.paymentStatus === "PAID";
 
   return (
-    <div className="container-narrow py-16 text-center">
-      <h1 className="font-display text-5xl">{paid || !sessionId ? "Order confirmed" : waiting ? "Checking payment…" : "Payment pending"}</h1>
-      <p className="mt-4 text-muted">
-        Your order <span className="text-ink">{orderNumber}</span>
-        {paid ? " is paid and received." : sessionId ? " is recorded. Stripe is confirming the card payment." : " has been received."}
-      </p>
-      <Link to="/shop" className={cn(buttonVariants(), "mt-8 inline-flex")}>Continue shopping</Link>
+    <div className="container-narrow py-12 sm:py-16">
+      <div className="text-center">
+        {paid ? <CheckCircle2 size={56} className="mx-auto text-success" /> : null}
+        <h1 className="mt-5 font-display text-4xl sm:text-5xl">{paid ? "Payment successful!" : "Order received"}</h1>
+        <p className="mx-auto mt-4 max-w-lg text-muted">
+          {paid
+            ? `Thank you${order ? `, ${order.fullName.split(" ")[0]}` : ""}. Your order ${orderNumber} is paid and confirmed. We've emailed you a receipt.`
+            : `Your order ${orderNumber} is recorded. Stripe is still confirming the card payment — we'll email you as soon as it's through.`}
+        </p>
+      </div>
+
+      {order ? (
+        <div className="mt-10">
+          <h2 className="mb-4 font-display text-2xl">Order summary</h2>
+          <OrderSummary order={order} />
+        </div>
+      ) : null}
+
+      <div className="mt-8 flex flex-wrap justify-center gap-3">
+        <Link to="/shop" className={buttonVariants({ size: "lg" })}>Continue shopping</Link>
+        {user ? <Link to="/account" className={buttonVariants({ variant: "outline", size: "lg" })}>View all orders</Link> : null}
+      </div>
+    </div>
+  );
+}
+
+function AccountOrderPage() {
+  const { orderNumber } = useParams();
+  const { user, ready } = useShop();
+  const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!orderNumber || !user) return;
+    void api<OrderDetail>(`/api/account/orders/${encodeURIComponent(orderNumber)}`)
+      .then(setOrder)
+      .catch(() => setFailed(true));
+  }, [orderNumber, user]);
+
+  if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(`/account/orders/${orderNumber ?? ""}`)}`} replace />;
+  if (failed) return <EmptyState title="Order not found" description="We couldn't find that order on your account." action={<Link to="/account" className={buttonVariants()}>Back to account</Link>} />;
+  if (!order) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+
+  return (
+    <div className="container-narrow py-12">
+      <Link to="/account" className="text-sm text-muted hover:text-ink">← All orders</Link>
+      <h1 className="mt-4 mb-6 font-display text-4xl">Order summary</h1>
+      <OrderSummary order={order} />
     </div>
   );
 }
@@ -326,7 +415,7 @@ function LoginPage() {
   const { refresh, user, ready } = useShop();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = safeNextPath(params.get("next"));
+  const next = safeNextPath(params.get("next") ?? lastPage(), "/shop");
   const checkout = next.startsWith("/checkout");
   const [error, setError] = useState<string | null>(null);
   if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
@@ -355,8 +444,14 @@ function LoginPage() {
           }
         }}
       >
-        <div><Label>Email</Label><Input name="email" type="email" required /></div>
-        <div><Label>Password</Label><Input name="password" type="password" required /></div>
+        <div><Label>Email</Label><Input name="email" type="email" autoComplete="email" required /></div>
+        <div>
+          <div className="flex items-baseline justify-between">
+            <Label>Password</Label>
+            <Link to="/forgot-password" className="text-sm text-muted underline hover:text-ink">Forgot password?</Link>
+          </div>
+          <PasswordInput name="password" autoComplete="current-password" required />
+        </div>
         <FieldError message={error ?? undefined} />
         <Button type="submit" className="w-full" size="lg">Sign in</Button>
         <p className="text-center text-sm text-muted">
@@ -374,7 +469,7 @@ function RegisterPage() {
   const { refresh, user, ready } = useShop();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = safeNextPath(params.get("next"));
+  const next = safeNextPath(params.get("next") ?? lastPage(), "/shop");
   const checkout = next.startsWith("/checkout");
   const [error, setError] = useState<string | null>(null);
   if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
@@ -391,21 +486,32 @@ function RegisterPage() {
         onSubmit={async (event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
+          if (form.get("password") !== form.get("confirmPassword")) {
+            setError("The passwords don't match.");
+            return;
+          }
+          setError(null);
           try {
             await api("/api/register", {
               method: "POST",
-              body: JSON.stringify({ name: form.get("name"), email: form.get("email"), password: form.get("password") }),
+              body: JSON.stringify({ name: form.get("name"), email: form.get("email"), password: form.get("password"), next }),
             });
             await refresh();
+            setFlash(`Account created! We've sent a confirmation link to ${String(form.get("email"))} — open it to verify your email.`);
             navigate(next);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not register.");
           }
         }}
       >
-        <div><Label>Name</Label><Input name="name" required /></div>
-        <div><Label>Email</Label><Input name="email" type="email" required /></div>
-        <div><Label>Password</Label><Input name="password" type="password" required minLength={8} /></div>
+        <div><Label>Name</Label><Input name="name" autoComplete="name" required /></div>
+        <div><Label>Email</Label><Input name="email" type="email" autoComplete="email" required /></div>
+        <div>
+          <Label>Password</Label>
+          <PasswordInput name="password" autoComplete="new-password" required minLength={8} />
+          <p className="mt-1.5 text-xs text-muted">At least 8 characters.</p>
+        </div>
+        <div><Label>Confirm password</Label><PasswordInput name="confirmPassword" autoComplete="new-password" required minLength={8} /></div>
         <FieldError message={error ?? undefined} />
         <Button type="submit" className="w-full" size="lg">Create account</Button>
         <p className="text-center text-sm text-muted">
@@ -427,21 +533,62 @@ function AccountPage() {
     if (!user) return;
     void api<typeof orders>("/api/my-orders").then(setOrders);
   }, [user]);
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login?next=/account" replace />;
   return (
     <div className="container-page py-12">
       <h1 className="font-display text-4xl">Account</h1>
       <p className="mt-2 text-muted">{user.name} · {user.email}</p>
+      {user.verified === false ? <VerifyReminder /> : null}
       <Button className="mt-4" variant="outline" onClick={async () => { await api("/api/logout", { method: "POST" }); await refresh(); navigate("/"); }}>Sign out</Button>
       <h2 className="mt-10 font-display text-2xl">Orders</h2>
-      <ul className="mt-4 divide-y divide-line rounded-3xl bg-white">
-        {orders.map((order) => (
-          <li key={order.orderNumber} className="flex justify-between px-5 py-4 text-sm">
-            <span>{order.orderNumber}</span>
-            <span>{order.status} · {formatGBP(order.total)}</span>
-          </li>
-        ))}
-      </ul>
+      {orders.length ? (
+        <ul className="mt-4 divide-y divide-line rounded-3xl bg-white">
+          {orders.map((order) => (
+            <li key={order.orderNumber}>
+              <Link to={`/account/orders/${order.orderNumber}`} className="flex justify-between px-5 py-4 text-sm hover:bg-canvas-warm/50">
+                <span className="font-medium">{order.orderNumber}</span>
+                <span>{order.status} · {formatGBP(order.total)} →</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm text-muted">No orders yet.</p>
+      )}
+    </div>
+  );
+}
+
+function VerifyReminder() {
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-peach/40 px-4 py-3 text-sm">
+      <p className="flex-1">
+        {state === "sent"
+          ? "Sent! Check your inbox for the confirmation link."
+          : error ?? "Please confirm your email address — check your inbox for our link."}
+      </p>
+      {state !== "sent" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={state === "sending"}
+          onClick={async () => {
+            setState("sending");
+            setError(null);
+            try {
+              await api("/api/auth/resend-verification", { method: "POST", body: JSON.stringify({ next: "/shop" }) });
+              setState("sent");
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Could not send the email.");
+              setState("idle");
+            }
+          }}
+        >
+          {state === "sending" ? "Sending…" : "Resend email"}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -508,6 +655,10 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/account/orders/:orderNumber" element={<AccountOrderPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="*" element={<NotFoundPage />} />

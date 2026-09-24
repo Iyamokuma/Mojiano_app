@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, prefetchApi } from "@/lib/api";
 
-export type ShopUser = { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN" } | null;
+export type ShopUser = { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN"; verified?: boolean } | null;
 export type ShopCategory = { id: string; name: string; slug: string; children: { name: string; slug: string }[] };
 
 type ShopState = {

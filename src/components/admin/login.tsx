@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
-import { FieldError, Input, Label } from "@/components/ui/field";
+import { FieldError, Input, Label, PasswordInput } from "@/components/ui/field";
 import { api } from "@/lib/api";
 import { warmupAdmin } from "@/lib/admin-prefetch";
 import { useAdminAuth } from "@/context/admin";
@@ -65,8 +65,11 @@ export function AdminLoginPage() {
                 <Input name="email" type="email" autoComplete="username" required />
               </div>
               <div>
-                <Label>Password</Label>
-                <Input name="password" type="password" autoComplete="current-password" required />
+                <div className="flex items-baseline justify-between">
+                  <Label>Password</Label>
+                  <a href="/forgot-password" className="text-sm text-muted underline hover:text-ink">Forgot password?</a>
+                </div>
+                <PasswordInput name="password" autoComplete="current-password" required />
               </div>
               <FieldError message={error ?? undefined} />
               <Button type="submit" variant="gold" className="w-full" size="lg" disabled={pending}>
