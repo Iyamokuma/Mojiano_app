@@ -78,7 +78,7 @@ export function HeroArchRow({ arches, onSpotlight }: HeroArchRowProps) {
   const showVideo = videoOk && motionOk && clip !== null;
 
   return (
-    <div className="mt-6 w-full sm:mt-8 md:mt-10">
+    <div className="mt-6 w-full pb-4 sm:mt-8 sm:pb-6 md:mt-10 md:pb-8">
       <div className="mx-auto w-full max-w-[76rem] px-2 min-[400px]:px-3 sm:px-6 md:px-8">
         <div
           ref={rowRef}

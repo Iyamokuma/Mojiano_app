@@ -94,7 +94,7 @@ function CategoryScrollStrip({ categories }: { categories: CategoryCard[] }) {
           "scroll-smooth snap-x snap-mandatory md:snap-none",
         )}
       >
-        <div className="grid w-max grid-flow-col grid-rows-2 gap-x-4 gap-y-6 min-[400px]:gap-x-5 min-[400px]:gap-y-8 lg:gap-x-6">
+        <div className="grid w-max grid-flow-col grid-rows-2 gap-x-4 gap-y-7 min-[400px]:gap-x-5 min-[400px]:gap-y-9 lg:gap-x-6 lg:gap-y-10">
           {categories.map((category) => (
             <div key={category.id} className="snap-start">
               <CategoryPill category={category} />
@@ -139,9 +139,9 @@ export function CategoryCatalog({ categories }: { categories: CategoryCard[] }) 
   if (!categories.length) return null;
 
   return (
-    <section className="mt-8 bg-white md:mt-12">
-      <div className="container-page pb-8 pt-2 md:pb-10 md:pt-4 lg:pb-12">
-        <div className="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12 xl:grid-cols-[16rem_minmax(0,1fr)] xl:gap-14">
+    <section className="mt-12 bg-white md:mt-16 lg:mt-20">
+      <div className="container-page pb-10 pt-6 md:pb-12 md:pt-8 lg:pb-14 lg:pt-10">
+        <div className="grid items-start gap-10 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[16rem_minmax(0,1fr)] xl:gap-16">
           <aside className="hidden lg:block">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-ink">Categories</p>
             <div className="mt-4 max-h-[min(22rem,calc(100vh-12rem))] space-y-3 overflow-y-auto pr-2">
