@@ -139,8 +139,8 @@ export function CategoryCatalog({ categories }: { categories: CategoryCard[] }) 
   if (!categories.length) return null;
 
   return (
-    <section className="mt-12 bg-white md:mt-16 lg:mt-20">
-      <div className="container-page pb-10 pt-6 md:pb-12 md:pt-8 lg:pb-14 lg:pt-10">
+    <section className="mt-14 bg-white md:mt-16 lg:mt-20">
+      <div className="container-page pb-10 pt-8 md:pb-12 md:pt-8 lg:pb-14 lg:pt-10">
         <div className="grid items-start gap-10 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[16rem_minmax(0,1fr)] xl:gap-16">
           <aside className="hidden lg:block">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-ink">Categories</p>
@@ -175,6 +175,9 @@ export function CategoryCatalog({ categories }: { categories: CategoryCard[] }) 
           </aside>
 
           <div className="min-w-0">
+            <h2 className="mb-5 font-display text-[1.5rem] leading-tight text-ink/90 min-[400px]:text-[1.65rem] lg:hidden">
+              Categories
+            </h2>
             <CategoryScrollStrip categories={visible} />
           </div>
         </div>
