@@ -89,13 +89,13 @@ const products: SeedProduct[] = [
 ];
 
 async function main() {
-  const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@mojiano.local").toLowerCase();
-  const adminPassword = process.env.ADMIN_PASSWORD ?? "ChangeThisPassword123!";
+  const adminEmail = (process.env.ADMIN_EMAIL ?? "mojianouk@yahoo.com").toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "Mojisola123";
   const passwordHash = await bcrypt.hash(adminPassword, 12);
 
   await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { role: "ADMIN", passwordHash },
+    update: { role: "ADMIN", passwordHash, name: "Mojiano Admin" },
     create: {
       email: adminEmail,
       name: "Mojiano Admin",
@@ -103,6 +103,11 @@ async function main() {
       role: "ADMIN",
     },
   });
+
+  const legacyAdmin = await prisma.user.findUnique({ where: { email: "admin@mojiano.local" } });
+  if (legacyAdmin && legacyAdmin.email !== adminEmail) {
+    await prisma.user.delete({ where: { id: legacyAdmin.id } });
+  }
 
   await prisma.user.upsert({
     where: { email: "customer@mojiano.local" },

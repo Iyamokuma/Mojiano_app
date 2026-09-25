@@ -94,13 +94,13 @@ function HomePage() {
       <CategoryCatalog categories={data.categories} />
       {data.collections.newArrivals.length ? (
         <section className="container-page pb-16">
-          <h2 className="mb-8 font-display text-4xl">New arrivals</h2>
+          <h2 className="mb-8 font-display text-3xl sm:text-4xl">New arrivals</h2>
           <ProductGrid products={data.collections.newArrivals} />
         </section>
       ) : null}
       {data.collections.featured.length ? (
         <section className="container-page pb-16">
-          <h2 className="mb-8 font-display text-4xl">Featured</h2>
+          <h2 className="mb-8 font-display text-3xl sm:text-4xl">Featured</h2>
           <ProductGrid products={data.collections.featured} />
         </section>
       ) : null}

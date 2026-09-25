@@ -175,9 +175,7 @@ export function CategoryCatalog({ categories }: { categories: CategoryCard[] }) 
           </aside>
 
           <div className="min-w-0">
-            <h2 className="mb-5 font-display text-[1.5rem] leading-tight text-ink/90 min-[400px]:text-[1.65rem] lg:hidden">
-              Categories
-            </h2>
+            <h2 className="mb-8 font-display text-3xl sm:text-4xl lg:hidden">Categories</h2>
             <CategoryScrollStrip categories={visible} />
           </div>
         </div>

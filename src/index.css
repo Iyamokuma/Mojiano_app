@@ -109,3 +109,29 @@
     animation: none;
   }
 }
+
+@keyframes footer-wave-drift {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.footer-wave-layer {
+  animation: footer-wave-drift 28s linear infinite;
+}
+
+.footer-wave-layer-delay {
+  animation-duration: 36s;
+  animation-direction: reverse;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer-wave-layer,
+  .footer-wave-layer-delay {
+    animation: none;
+  }
+}
