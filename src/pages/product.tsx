@@ -5,6 +5,7 @@ import { AddToCartButton } from "@/components/storefront/add-to-cart";
 import { ProductGrid, type ProductCardData } from "@/components/storefront/product-card";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/feedback";
+import { MojianoLoader } from "@/components/ui/mojiano-loader";
 import { useShop } from "@/context/shop";
 import { api } from "@/lib/api";
 import { resolveImageUrl } from "@/lib/media";
@@ -97,7 +98,7 @@ export function ProductPage() {
     );
   }
 
-  if (!product) return <div className="container-page py-24 text-muted">Loading…</div>;
+  if (!product) return <MojianoLoader className="container-page" hint="Finding this product…" />;
 
   return (
     <div className="container-page py-10">

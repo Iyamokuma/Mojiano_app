@@ -12,6 +12,7 @@ import { CategoryCatalog } from "@/components/storefront/category-catalog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Label, PasswordInput, Select, Textarea, FieldError } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/feedback";
+import { MojianoLoader } from "@/components/ui/mojiano-loader";
 import { FlashBanner } from "@/components/storefront/flash-banner";
 import { OrderSummary, type OrderDetail } from "@/components/storefront/order-summary";
 import { useShop } from "@/context/shop";
@@ -79,7 +80,7 @@ function HomePage() {
       />
     );
   }
-  if (!data) return <div className="container-page py-24 text-muted">Loading…</div>;
+  if (!data) return <MojianoLoader className="container-page" hint="Opening the warehouse floor…" />;
   const hero = data.content.find((block) => block.key === "hero");
 
   return (
@@ -151,7 +152,7 @@ function CatalogPage({ title, categorySlug }: { title?: string; categorySlug?: s
     );
   }
 
-  if (!result) return <div className="container-page py-24 text-muted">Loading…</div>;
+  if (!result) return <MojianoLoader className="container-page" hint="Gathering clearance lines…" />;
 
   return (
     <CatalogLayout
@@ -188,7 +189,7 @@ function BasketPage() {
     void load();
   }, []);
 
-  if (!cart) return <div className="container-page py-24 text-muted">Loading…</div>;
+  if (!cart) return <MojianoLoader className="container-page" hint="Checking your basket…" />;
   if (!cart.items.length) {
     return <EmptyState title="Your basket is empty" description="Browse the shop to add pieces." action={<Link to="/shop" className={buttonVariants()}>Continue shopping</Link>} />;
   }
@@ -232,7 +233,7 @@ function CheckoutPage() {
   const [error, setError] = useState<string | null>(params.get("cancelled") ? "Payment was cancelled. Your basket is still here." : null);
   const [pending, setPending] = useState(false);
 
-  if (!ready) return <div className="container-narrow py-12 text-muted">Loading…</div>;
+  if (!ready) return <MojianoLoader className="container-narrow" compact hint="One moment…" />;
   if (!user) return <Navigate to="/login?next=/checkout" replace />;
 
   return (
@@ -347,11 +348,7 @@ function ConfirmationPage() {
 
   if (!status) {
     return (
-      <div className="container-narrow py-24 text-center">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-line border-t-ink" />
-        <h1 className="mt-6 font-display text-3xl">Confirming your payment…</h1>
-        <p className="mt-3 text-sm text-muted">This only takes a moment. Please don't close this page.</p>
-      </div>
+      <MojianoLoader className="container-narrow" hint="Confirming your payment — please keep this page open." />
     );
   }
 
@@ -397,10 +394,10 @@ function AccountOrderPage() {
       .catch(() => setFailed(true));
   }, [orderNumber, user]);
 
-  if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (!ready) return <MojianoLoader className="container-narrow" compact />;
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(`/account/orders/${orderNumber ?? ""}`)}`} replace />;
   if (failed) return <EmptyState title="Order not found" description="We couldn't find that order on your account." action={<Link to="/account" className={buttonVariants()}>Back to account</Link>} />;
-  if (!order) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (!order) return <MojianoLoader className="container-narrow" compact hint="Pulling up your order…" />;
 
   return (
     <div className="container-narrow py-12">
@@ -418,7 +415,7 @@ function LoginPage() {
   const next = safeNextPath(params.get("next") ?? lastPage(), "/shop");
   const checkout = next.startsWith("/checkout");
   const [error, setError] = useState<string | null>(null);
-  if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (!ready) return <MojianoLoader className="container-narrow" compact />;
   if (user) return <Navigate to={next} replace />;
 
   return (
@@ -472,7 +469,7 @@ function RegisterPage() {
   const next = safeNextPath(params.get("next") ?? lastPage(), "/shop");
   const checkout = next.startsWith("/checkout");
   const [error, setError] = useState<string | null>(null);
-  if (!ready) return <div className="container-narrow py-16 text-muted">Loading…</div>;
+  if (!ready) return <MojianoLoader className="container-narrow" compact />;
   if (user) return <Navigate to={next} replace />;
 
   return (
@@ -638,7 +635,7 @@ export function App() {
   return (
     <>
     <DeployRefreshBanner />
-    <Suspense fallback={<div className="container-page py-24 text-muted">Loading…</div>}>
+    <Suspense fallback={<MojianoLoader className="container-page" />}>
     <Routes>
       <Route element={<AdminAuthLayout />}>
         <Route path="/admin/*" element={<AdminGate />} />

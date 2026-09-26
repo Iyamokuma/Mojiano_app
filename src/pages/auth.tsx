@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { CheckCircle2, MailCheck } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError, Input, Label, PasswordInput } from "@/components/ui/field";
+import { MojianoLoader } from "@/components/ui/mojiano-loader";
 import { useShop } from "@/context/shop";
 import { api } from "@/lib/api";
 import { lastPage, setFlash } from "@/lib/navigation-memory";
@@ -171,7 +172,7 @@ export function VerifyEmailPage() {
   }, [state, seconds, navigate]);
 
   if (state.status === "checking") {
-    return <div className="container-narrow py-24 text-center text-muted">Confirming your email…</div>;
+    return <MojianoLoader className="container-narrow" hint="Confirming your email…" />;
   }
 
   if (state.status === "failed") {
