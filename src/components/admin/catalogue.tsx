@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, dropApiCache, peekApi } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
@@ -80,14 +81,28 @@ export function AdminCatalogue() {
   function deleteProducts(ids: string[]) {
     if (!ids.length) return;
     const removing = new Set(ids);
-    setProducts((current) => current.filter((product) => !removing.has(product.id)));
-    setSelected((current) => current.filter((id) => !removing.has(id)));
-    setError(null);
-    dropApiCache("/api/admin/products");
-    void api("/api/admin/products/delete", { method: "POST", body: JSON.stringify({ ids }) }).catch((err) => {
-      setError(err instanceof Error ? err.message : "Could not delete those products.");
-      void loadProducts();
+    flushSync(() => {
+      setProducts((current) => current.filter((product) => !removing.has(product.id)));
+      setSelected((current) => current.filter((id) => !removing.has(id)));
+      setError(null);
     });
+    dropApiCache("/api/admin/products");
+    void fetch("/api/admin/products/delete", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+      keepalive: true,
+    })
+      .then(async (res) => {
+        if (res.ok) return;
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Could not delete those products.");
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Could not delete those products.");
+        void loadProducts();
+      });
   }
 
   function toggleSelected(id: string) {

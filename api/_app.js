@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import { customAlphabet as customAlphabet3 } from "nanoid";
+import { Prisma } from "@prisma/client";
 
 // server/db.ts
 import { PrismaClient } from "@prisma/client";
@@ -2025,28 +2026,24 @@ app.patch("/api/admin/products/:id", requireAdmin, async (req, res) => {
 async function retireProducts(ids) {
   const unique = [...new Set(ids.map((id3) => String(id3).trim()).filter(Boolean))].slice(0, 500);
   if (!unique.length) return 0;
-  const products = await prisma.product.findMany({
-    where: { id: { in: unique }, deletedAt: null },
-    select: { id: true, sku: true, slug: true }
-  });
-  if (!products.length) return 0;
   const stamp = Date.now().toString(36);
-  await prisma.$transaction([
-    prisma.cartItem.deleteMany({ where: { productId: { in: products.map((product) => product.id) } } }),
-    prisma.wishlistItem.deleteMany({ where: { productId: { in: products.map((product) => product.id) } } }),
-    ...products.map(
-      (product) => prisma.product.update({
-        where: { id: product.id },
-        data: {
-          deletedAt: /* @__PURE__ */ new Date(),
-          isActive: false,
-          sku: `${product.sku}-deleted-${stamp}`.slice(0, 80),
-          slug: `${product.slug}-deleted-${stamp}`.slice(0, 120)
-        }
-      })
-    )
+  const now = /* @__PURE__ */ new Date();
+  const suffix = `-deleted-${stamp}`;
+  const [, , updated] = await Promise.all([
+    prisma.cartItem.deleteMany({ where: { productId: { in: unique } } }),
+    prisma.wishlistItem.deleteMany({ where: { productId: { in: unique } } }),
+    prisma.$executeRaw`
+      UPDATE "Product"
+      SET
+        "deletedAt" = ${now},
+        "isActive" = false,
+        "updatedAt" = ${now},
+        "sku" = LEFT("sku" || ${suffix}, 80),
+        "slug" = LEFT("slug" || ${suffix}, 120)
+      WHERE "id" IN (${Prisma.join(unique)}) AND "deletedAt" IS NULL
+    `
   ]);
-  return products.length;
+  return Number(updated);
 }
 app.post("/api/admin/products/delete", requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
@@ -2054,6 +2051,8 @@ app.post("/api/admin/products/delete", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "Choose at least one product." });
     return;
   }
+  adminGetMemo.clear();
+  shopMemo.clear();
   const deleted = await retireProducts(ids);
   res.json({ deleted });
 });
