@@ -89,7 +89,35 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
+const MAX_PRODUCT_IMAGE_BYTES = 20 * 1024 * 1024;
+
 export async function uploadImage(file: File): Promise<{ url: string; alt: string }> {
+  if (file.size > MAX_PRODUCT_IMAGE_BYTES) {
+    throw new Error("Images must be 20MB or smaller.");
+  }
+  const plan = await api<{ mode: "direct" | "server"; signedUrl?: string; publicUrl?: string }>(
+    "/api/admin/uploads/sign",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type || "image/jpeg",
+        size: file.size,
+      }),
+    },
+  );
+  if (plan.mode === "direct" && plan.signedUrl && plan.publicUrl) {
+    const form = new FormData();
+    form.append("cacheControl", "3600");
+    form.append("", file, file.name);
+    const uploaded = await fetch(plan.signedUrl, { method: "PUT", body: form });
+    if (!uploaded.ok) {
+      throw new Error("Could not upload that image.");
+    }
+    invalidateApiCache();
+    return { url: plan.publicUrl, alt: "" };
+  }
+
   const body = new FormData();
   body.append("file", file);
   const res = await fetch("/api/admin/uploads", {
@@ -102,5 +130,5 @@ export async function uploadImage(file: File): Promise<{ url: string; alt: strin
     throw new Error(data.error || "Could not upload that image.");
   }
   invalidateApiCache();
-  return { url: data.url, alt: data.alt || file.name };
+  return { url: data.url, alt: data.alt || "" };
 }

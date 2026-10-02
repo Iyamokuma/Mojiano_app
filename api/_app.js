@@ -1,6 +1,6 @@
 // server/index.ts
 import "dotenv/config";
-import path2 from "path";
+import path3 from "path";
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -576,6 +576,7 @@ function safeNextPath(value, fallback = "/account") {
 }
 
 // server/product-image-storage.ts
+import path from "node:path";
 import { customAlphabet } from "nanoid";
 
 // server/supabase.ts
@@ -591,6 +592,11 @@ if (process.env.NODE_ENV !== "production") globalForSupabase.supabaseAdmin = sup
 // server/product-image-storage.ts
 var id = customAlphabet("abcdefghijkmnopqrstuvwxyz23456789", 10);
 var BUCKET = process.env.SUPABASE_PRODUCT_BUCKET ?? "product-images";
+var MAX_PRODUCT_IMAGE_BYTES = 20 * 1024 * 1024;
+var bucketReady = null;
+function supabaseStorageReady() {
+  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+}
 function supabasePublicPrefix() {
   const base = process.env.SUPABASE_URL?.replace(/\/$/, "") ?? "";
   return base ? `${base}/storage/v1/object/public/${BUCKET}/` : "";
@@ -612,14 +618,54 @@ function isProductImageUrl(url2) {
 function mediaPath(id3) {
   return `/api/media/${id3}`;
 }
+async function ensureBucket() {
+  if (!supabaseStorageReady()) return;
+  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets();
+  if (listError) throw listError;
+  if (buckets?.some((bucket) => bucket.name === BUCKET)) {
+    const { error: error2 } = await supabaseAdmin.storage.updateBucket(BUCKET, {
+      public: true,
+      fileSizeLimit: MAX_PRODUCT_IMAGE_BYTES
+    });
+    if (error2) throw error2;
+    return;
+  }
+  const { error } = await supabaseAdmin.storage.createBucket(BUCKET, {
+    public: true,
+    fileSizeLimit: MAX_PRODUCT_IMAGE_BYTES
+  });
+  if (error && !/already exists/i.test(error.message)) throw error;
+}
+async function readyBucket() {
+  if (!bucketReady) bucketReady = ensureBucket();
+  await bucketReady;
+}
+async function createProductUploadTarget(originalName, contentType) {
+  if (!supabaseStorageReady()) {
+    throw new Error("Image storage is not configured on the server.");
+  }
+  await readyBucket();
+  const ext = path.extname(originalName).toLowerCase() || ".jpg";
+  const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
+  const objectPath = `products/${Date.now()}-${id()}${safeExt}`;
+  const { data, error } = await supabaseAdmin.storage.from(BUCKET).createSignedUploadUrl(objectPath);
+  if (error || !data) throw error ?? new Error("Could not start the upload.");
+  const { data: published } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(data.path || objectPath);
+  return {
+    signedUrl: data.signedUrl,
+    token: data.token,
+    publicUrl: published.publicUrl,
+    contentType: contentType || "image/jpeg"
+  };
+}
 
 // server/upload.ts
 import fs from "node:fs";
-import path from "node:path";
+import path2 from "node:path";
 import multer from "multer";
 import { customAlphabet as customAlphabet2 } from "nanoid";
 var id2 = customAlphabet2("abcdefghijkmnopqrstuvwxyz23456789", 10);
-var UPLOAD_DIR = process.env.VERCEL ? path.join("/tmp", "uploads", "products") : path.join(process.cwd(), "public", "uploads", "products");
+var UPLOAD_DIR = process.env.VERCEL ? path2.join("/tmp", "uploads", "products") : path2.join(process.cwd(), "public", "uploads", "products");
 var ALLOWED = /* @__PURE__ */ new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 try {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -628,12 +674,12 @@ try {
 var storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = path2.extname(file.originalname).toLowerCase();
     cb(null, `${Date.now()}-${id2()}${ALLOWED.has(ext) ? ext : ".jpg"}`);
   }
 });
 function imageFileFilter(_req, file, cb) {
-  const ext = path.extname(file.originalname).toLowerCase();
+  const ext = path2.extname(file.originalname).toLowerCase();
   const ok = ALLOWED.has(ext) && file.mimetype.startsWith("image/");
   if (!ok) {
     cb(new Error("Please upload a JPG, PNG, WEBP or GIF."));
@@ -641,7 +687,7 @@ function imageFileFilter(_req, file, cb) {
   }
   cb(null, true);
 }
-var limits = { fileSize: 4 * 1024 * 1024, files: 8 };
+var limits = { fileSize: 20 * 1024 * 1024, files: 8 };
 var productImageUpload = multer({
   storage,
   limits,
@@ -992,8 +1038,8 @@ app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use("/uploads/products", express.static(UPLOAD_DIR));
 app.use("/api/uploads/products", express.static(UPLOAD_DIR));
-app.use("/uploads", express.static(path2.join(process.cwd(), "public", "uploads")));
-app.use("/api/uploads", express.static(path2.join(process.cwd(), "public", "uploads")));
+app.use("/uploads", express.static(path3.join(process.cwd(), "public", "uploads")));
+app.use("/api/uploads", express.static(path3.join(process.cwd(), "public", "uploads")));
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.path.startsWith("/api/admin") && !req.path.startsWith("/api/admin/auth")) {
     res.on("finish", () => {
@@ -1806,10 +1852,34 @@ app.get("/api/media/:id", async (req, res) => {
   res.set("Cache-Control", "public, max-age=31536000, immutable");
   res.send(Buffer.from(image.bytes));
 });
+app.post("/api/admin/uploads/sign", requireAdmin, async (req, res) => {
+  const size = Number(req.body?.size ?? 0);
+  const contentType = String(req.body?.contentType ?? "");
+  const filename = String(req.body?.filename ?? "image.jpg");
+  if (!contentType.startsWith("image/")) {
+    res.status(400).json({ error: "Please upload a JPG, PNG, WEBP or GIF." });
+    return;
+  }
+  if (!Number.isFinite(size) || size < 1 || size > MAX_PRODUCT_IMAGE_BYTES) {
+    res.status(400).json({ error: "Images must be 20MB or smaller." });
+    return;
+  }
+  if (!supabaseStorageReady()) {
+    res.json({ mode: "server" });
+    return;
+  }
+  try {
+    const target = await createProductUploadTarget(filename, contentType);
+    res.json({ mode: "direct", ...target });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Could not start the upload." });
+  }
+});
 app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
   productImageMemoryUpload.single("file")(req, res, (error) => {
     if (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
+      const tooLarge = error instanceof Error && "code" in error && error.code === "LIMIT_FILE_SIZE";
+      res.status(400).json({ error: tooLarge ? "Images must be 20MB or smaller." : error instanceof Error ? error.message : "Could not upload that image." });
       return;
     }
     next();
@@ -2200,10 +2270,10 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err instanceof Error ? err.message : "Server error." });
 });
 if (isProd && !process.env.VERCEL) {
-  const dist = path2.join(process.cwd(), "dist");
+  const dist = path3.join(process.cwd(), "dist");
   app.use(express.static(dist));
   app.get(/.*/, (_req, res) => {
-    res.sendFile(path2.join(dist, "index.html"));
+    res.sendFile(path3.join(dist, "index.html"));
   });
 }
 if (!process.env.VERCEL) {

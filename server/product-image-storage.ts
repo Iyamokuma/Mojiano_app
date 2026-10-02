@@ -4,6 +4,7 @@ import { supabaseAdmin } from "./supabase";
 
 const id = customAlphabet("abcdefghijkmnopqrstuvwxyz23456789", 10);
 const BUCKET = process.env.SUPABASE_PRODUCT_BUCKET ?? "product-images";
+export const MAX_PRODUCT_IMAGE_BYTES = 20 * 1024 * 1024;
 
 let bucketReady: Promise<void> | null = null;
 
@@ -40,10 +41,17 @@ async function ensureBucket() {
   if (!supabaseStorageReady()) return;
   const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets();
   if (listError) throw listError;
-  if (buckets?.some((bucket) => bucket.name === BUCKET)) return;
+  if (buckets?.some((bucket) => bucket.name === BUCKET)) {
+    const { error } = await supabaseAdmin.storage.updateBucket(BUCKET, {
+      public: true,
+      fileSizeLimit: MAX_PRODUCT_IMAGE_BYTES,
+    });
+    if (error) throw error;
+    return;
+  }
   const { error } = await supabaseAdmin.storage.createBucket(BUCKET, {
     public: true,
-    fileSizeLimit: 8 * 1024 * 1024,
+    fileSizeLimit: MAX_PRODUCT_IMAGE_BYTES,
   });
   if (error && !/already exists/i.test(error.message)) throw error;
 }
@@ -51,6 +59,25 @@ async function ensureBucket() {
 async function readyBucket() {
   if (!bucketReady) bucketReady = ensureBucket();
   await bucketReady;
+}
+
+export async function createProductUploadTarget(originalName: string, contentType: string) {
+  if (!supabaseStorageReady()) {
+    throw new Error("Image storage is not configured on the server.");
+  }
+  await readyBucket();
+  const ext = path.extname(originalName).toLowerCase() || ".jpg";
+  const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
+  const objectPath = `products/${Date.now()}-${id()}${safeExt}`;
+  const { data, error } = await supabaseAdmin.storage.from(BUCKET).createSignedUploadUrl(objectPath);
+  if (error || !data) throw error ?? new Error("Could not start the upload.");
+  const { data: published } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(data.path || objectPath);
+  return {
+    signedUrl: data.signedUrl,
+    token: data.token,
+    publicUrl: published.publicUrl,
+    contentType: contentType || "image/jpeg",
+  };
 }
 
 export async function uploadProductImageBuffer(buffer: Buffer, originalName: string, mimeType: string) {

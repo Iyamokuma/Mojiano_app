@@ -384,7 +384,7 @@ export function AdminProductForm() {
           {step === "media" ? (
             <div>
               <h2 className="text-[15px] font-semibold">Upload media</h2>
-              <p className="mt-1 text-sm text-muted">Drop photos here or browse. Click one to make it the main image on the shop.</p>
+              <p className="mt-1 text-sm text-muted">Drop photos here or browse. Each image can be up to 20MB. Click one to make it the main image on the shop.</p>
               <label
                 onDragOver={(event) => {
                   event.preventDefault();

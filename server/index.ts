@@ -31,7 +31,7 @@ import {
 import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../src/lib/validations";
 import { rateLimit } from "../src/lib/rate-limit";
 import { safeNextPath, slugify } from "../src/lib/utils";
-import { isProductImageUrl, mediaPath } from "./product-image-storage";
+import { createProductUploadTarget, isProductImageUrl, MAX_PRODUCT_IMAGE_BYTES, mediaPath, supabaseStorageReady } from "./product-image-storage";
 import { productImageMemoryUpload, UPLOAD_DIR } from "./upload";
 import { sendPasswordResetEmail, sendVerifyEmail } from "./email";
 import { storeUrl } from "./site-url";
@@ -1067,10 +1067,35 @@ app.get("/api/media/:id", async (req, res) => {
   res.send(Buffer.from(image.bytes));
 });
 
+app.post("/api/admin/uploads/sign", requireAdmin, async (req, res) => {
+  const size = Number(req.body?.size ?? 0);
+  const contentType = String(req.body?.contentType ?? "");
+  const filename = String(req.body?.filename ?? "image.jpg");
+  if (!contentType.startsWith("image/")) {
+    res.status(400).json({ error: "Please upload a JPG, PNG, WEBP or GIF." });
+    return;
+  }
+  if (!Number.isFinite(size) || size < 1 || size > MAX_PRODUCT_IMAGE_BYTES) {
+    res.status(400).json({ error: "Images must be 20MB or smaller." });
+    return;
+  }
+  if (!supabaseStorageReady()) {
+    res.json({ mode: "server" });
+    return;
+  }
+  try {
+    const target = await createProductUploadTarget(filename, contentType);
+    res.json({ mode: "direct", ...target });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Could not start the upload." });
+  }
+});
+
 app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
   productImageMemoryUpload.single("file")(req, res, (error) => {
     if (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
+      const tooLarge = error instanceof Error && "code" in error && (error as { code?: string }).code === "LIMIT_FILE_SIZE";
+      res.status(400).json({ error: tooLarge ? "Images must be 20MB or smaller." : error instanceof Error ? error.message : "Could not upload that image." });
       return;
     }
     next();
