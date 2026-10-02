@@ -18,6 +18,8 @@ type Settings = {
   aboutText: string;
   instagramUrl: string;
   facebookUrl: string;
+  tiktokUrl: string;
+  snapchatUrl: string;
   bankDetails: string;
   standardDeliveryFee: number;
   freeDeliveryThreshold: number;
@@ -64,6 +66,8 @@ export function AdminSettings() {
           returnsInfo: form.get("returnsInfo"),
           instagramUrl: form.get("instagramUrl"),
           facebookUrl: form.get("facebookUrl"),
+          tiktokUrl: form.get("tiktokUrl"),
+          snapchatUrl: form.get("snapchatUrl"),
           standardDeliveryFee: pence(form.get("standardDeliveryFee")),
           expressDeliveryFee: pence(form.get("expressDeliveryFee")),
           freeDeliveryThreshold: pence(form.get("freeDeliveryThreshold")),
@@ -170,7 +174,15 @@ export function AdminSettings() {
           </div>
           <div>
             <Label>Facebook</Label>
-            <Input name="facebookUrl" defaultValue={settings.facebookUrl} />
+            <Input name="facebookUrl" defaultValue={settings.facebookUrl} placeholder="mojiano.mojiano" />
+          </div>
+          <div>
+            <Label>TikTok</Label>
+            <Input name="tiktokUrl" defaultValue={settings.tiktokUrl ?? ""} placeholder="mojiano11" />
+          </div>
+          <div>
+            <Label>Snapchat</Label>
+            <Input name="snapchatUrl" defaultValue={settings.snapchatUrl ?? ""} placeholder="mojiano22" />
           </div>
         </Panel>
 

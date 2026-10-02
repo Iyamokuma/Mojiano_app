@@ -1009,11 +1009,12 @@ function setStaffCookie(res, user) {
 app.get("/api/bootstrap", async (req, res) => {
   try {
     const me = readUser(req);
-    const [site, categories, cart, account] = await Promise.all([
+    const [site, categories, cart, account, wishlistRows] = await Promise.all([
       settings(),
       remember("categories", 3e3, getVisibleCategories),
       getCart(req),
-      me ? prisma.user.findUnique({ where: { id: me.id }, select: { emailVerified: true } }) : null
+      me ? prisma.user.findUnique({ where: { id: me.id }, select: { emailVerified: true } }) : null,
+      me ? prisma.wishlistItem.findMany({ where: { userId: me.id }, select: { productId: true } }) : Promise.resolve([])
     ]);
     const summary = summariseCart(cart);
     res.set("Cache-Control", "private, no-store");
@@ -1022,6 +1023,7 @@ app.get("/api/bootstrap", async (req, res) => {
       categories,
       user: me ? { ...me, verified: Boolean(account?.emailVerified) } : null,
       cart: { count: summary.count, subtotal: summary.subtotal },
+      wishlistIds: wishlistRows.map((row) => row.productId),
       card: stripeEnabled()
     });
   } catch (error) {

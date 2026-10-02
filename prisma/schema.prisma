@@ -378,6 +378,8 @@ model SiteSettings {
   aboutText          String  @default("")
   instagramUrl       String  @default("")
   facebookUrl        String  @default("")
+  tiktokUrl          String  @default("")
+  snapchatUrl        String  @default("")
   bankDetails        String  @default("")
   standardDeliveryFee Int    @default(100)
   freeDeliveryThreshold Int  @default(7500)

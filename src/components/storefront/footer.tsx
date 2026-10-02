@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/brand/logo";
+import { FooterSocial } from "@/components/storefront/footer-social";
 import { useShop } from "@/context/shop";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +53,7 @@ export function Footer() {
             <Logo tone="dark" />
           </Link>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/65">{String(settings.tagline ?? "")}</p>
+          <FooterSocial settings={settings} />
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Shop</p>

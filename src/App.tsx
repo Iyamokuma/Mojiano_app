@@ -26,6 +26,7 @@ import { ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/
 const AdminAuthLayout = lazy(() => import("@/context/admin").then((module) => ({ default: module.AdminAuthLayout })));
 const AdminGate = lazy(() => import("@/pages/admin").then((module) => ({ default: module.AdminGate })));
 const ProductPage = lazy(() => import("@/pages/product").then((module) => ({ default: module.ProductPage })));
+const WishlistPage = lazy(() => import("@/pages/wishlist").then((module) => ({ default: module.WishlistPage })));
 
 function waLink(phone: unknown, message: string) {
   const digits = String(phone ?? "").replace(/[^\d]/g, "");
@@ -273,7 +274,8 @@ function CheckoutPage() {
         <div><Label>Email</Label><Input name="email" type="email" required defaultValue={user.email} readOnly className="bg-canvas-warm" /></div>
         <div><Label>Full name</Label><Input name="fullName" required defaultValue={user.name} /></div>
         <div><Label>Phone</Label><Input name="phone" required /></div>
-        <div><Label>Address</Label><Input name="line1" required /></div>
+        <div><Label>Address line 1</Label><Input name="line1" required /></div>
+        <div><Label>Address line 2</Label><Input name="line2" placeholder="Flat, suite, building (optional)" /></div>
         <div><Label>City</Label><Input name="city" required /></div>
         <div><Label>Postcode</Label><Input name="postcode" required /></div>
         <input type="hidden" name="country" value="United Kingdom" />
@@ -536,7 +538,12 @@ function AccountPage() {
       <h1 className="font-display text-4xl">Account</h1>
       <p className="mt-2 text-muted">{user.name} · {user.email}</p>
       {user.verified === false ? <VerifyReminder /> : null}
-      <Button className="mt-4" variant="outline" onClick={async () => { await api("/api/logout", { method: "POST" }); await refresh(); navigate("/"); }}>Sign out</Button>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <Link to="/wishlist" className={cn(buttonVariants({ variant: "outline" }))}>
+          Wishlist
+        </Link>
+        <Button variant="outline" onClick={async () => { await api("/api/logout", { method: "POST" }); await refresh(); navigate("/"); }}>Sign out</Button>
+      </div>
       <h2 className="mt-10 font-display text-2xl">Orders</h2>
       {orders.length ? (
         <ul className="mt-4 divide-y divide-line rounded-3xl bg-white">
@@ -647,6 +654,7 @@ export function App() {
         <Route path="/category/:slug" element={<CategoryPage />} />
         <Route path="/product/:slug" element={<ProductPage />} />
         <Route path="/basket" element={<BasketPage />} />
+        <Route path="/wishlist" element={<WishlistPage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
         <Route path="/checkout/confirmation/:orderNumber" element={<ConfirmationPage />} />
         <Route path="/login" element={<LoginPage />} />

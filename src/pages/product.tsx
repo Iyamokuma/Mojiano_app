@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { AddToCartButton } from "@/components/storefront/add-to-cart";
+import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { ProductGrid, type ProductCardData } from "@/components/storefront/product-card";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/feedback";
@@ -216,6 +217,7 @@ export function ProductPage() {
           ) : null}
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
+            <WishlistButton productId={product.id} className="h-12 w-12 border border-ink/15 bg-white" />
             <div className="inline-flex h-12 items-center rounded-full border border-ink/15 bg-white">
               <button
                 type="button"

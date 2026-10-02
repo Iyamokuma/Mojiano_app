@@ -224,9 +224,14 @@ async function main() {
     update: {
       standardDeliveryFee: 100,
       expressDeliveryFee: 100,
+      email: "info@mojiano.co.uk",
       phone: MOJIANO_PHONE_DISPLAY,
       whatsappNumber: MOJIANO_WHATSAPP_DIGITS,
       address: MOJIANO_ADDRESS,
+      facebookUrl: "mojiano.mojiano",
+      instagramUrl: "mojianocollections",
+      tiktokUrl: "mojiano11",
+      snapchatUrl: "mojiano22",
       deliveryInfo:
         "Standard and express delivery across the UK. Collection is available from our London warehouse at the address shown on Contact.",
     },
@@ -234,7 +239,7 @@ async function main() {
       id: "default",
       businessName: "Mojiano Wholesale Clearance",
       tagline: "Quality products at wholesale and clearance prices.",
-      email: "hello@mojiano.local",
+      email: "info@mojiano.co.uk",
       phone: MOJIANO_PHONE_DISPLAY,
       whatsappNumber: MOJIANO_WHATSAPP_DIGITS,
       address: MOJIANO_ADDRESS,
@@ -246,6 +251,10 @@ async function main() {
         "Standard and express delivery across the UK. Collection is available from our London warehouse at the address shown on Contact.",
       standardDeliveryFee: 100,
       expressDeliveryFee: 100,
+      facebookUrl: "mojiano.mojiano",
+      instagramUrl: "mojianocollections",
+      tiktokUrl: "mojiano11",
+      snapchatUrl: "mojiano22",
     },
   });
 

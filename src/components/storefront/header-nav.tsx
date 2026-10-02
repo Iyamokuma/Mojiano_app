@@ -4,6 +4,7 @@ import { Menu, Search, ShoppingBag, User, X } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { TornEdge } from "@/components/brand/torn-edge";
 import { CategoryRail } from "@/components/storefront/category-rail";
+import { WishlistNavLink } from "@/components/storefront/wishlist-button";
 import { useShop } from "@/context/shop";
 
 type CategoryLink = {
@@ -23,7 +24,7 @@ export function HeaderNav({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { spotlightSlug } = useShop();
+  const { spotlightSlug, wishlistIds } = useShop();
   const [open, setOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -85,6 +86,7 @@ export function HeaderNav({
           >
             <Search size={18} />
           </button>
+          <WishlistNavLink count={wishlistIds.length} />
           <Link
             to={signedIn ? "/account" : "/login"}
             className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-canvas-warm"
@@ -151,6 +153,9 @@ export function HeaderNav({
                 </Link>
               ))}
               <div className="mt-6 space-y-3 text-sm">
+                <Link to="/wishlist" className="block">
+                  Wishlist
+                </Link>
                 <Link to={signedIn ? "/account" : "/login"} className="block">
                   {signedIn ? "My account" : "Sign in"}
                 </Link>

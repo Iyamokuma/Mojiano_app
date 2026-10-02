@@ -299,6 +299,8 @@ CREATE TABLE "SiteSettings" (
     "aboutText" TEXT NOT NULL DEFAULT '',
     "instagramUrl" TEXT NOT NULL DEFAULT '',
     "facebookUrl" TEXT NOT NULL DEFAULT '',
+    "tiktokUrl" TEXT NOT NULL DEFAULT '',
+    "snapchatUrl" TEXT NOT NULL DEFAULT '',
     "bankDetails" TEXT NOT NULL DEFAULT '',
     "standardDeliveryFee" INTEGER NOT NULL DEFAULT 100,
     "freeDeliveryThreshold" INTEGER NOT NULL DEFAULT 7500,

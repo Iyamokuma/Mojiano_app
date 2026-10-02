@@ -4,6 +4,7 @@ import { compactImageUrl } from "@/lib/media";
 import { formatGBP, discountPercent, effectivePrice } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { AddToCartButton } from "@/components/storefront/add-to-cart";
+import { WishlistButton } from "@/components/storefront/wishlist-button";
 
 export type ProductCardData = {
   id: string;
@@ -33,6 +34,9 @@ export function ProductCard({ product }: { product: ProductCardData }) {
     <article className="group flex h-full flex-col items-center text-center">
       <Link to={`/product/${product.slug}`} className="relative block w-full overflow-hidden rounded-2xl bg-canvas-warm">
         <div className="relative aspect-square overflow-hidden rounded-2xl">
+          <div className="absolute right-2 top-2 z-10 rounded-full bg-white/90 p-1 shadow-sm">
+            <WishlistButton productId={product.id} size="sm" />
+          </div>
           {image ? (
             <img
               src={compactImageUrl(image.url)}

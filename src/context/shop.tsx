@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, prefetchApi } from "@/lib/api";
 
 export type ShopUser = { id: string; email: string; name: string; role: "CUSTOMER" | "ADMIN"; verified?: boolean } | null;
@@ -9,11 +9,14 @@ type ShopState = {
   ready: boolean;
   categories: ShopCategory[];
   cartCount: number;
+  wishlistIds: string[];
   cardPayments: boolean;
   settings: Record<string, string | number | boolean | null>;
   spotlightSlug: string | null;
   setSpotlightSlug: (slug: string | null) => void;
   refresh: () => Promise<void>;
+  refreshWishlist: () => Promise<void>;
+  toggleWishlist: (productId: string) => Promise<void>;
   setCartCount: (n: number) => void;
 };
 
@@ -60,6 +63,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [categories, setCategories] = useState<ShopCategory[]>(readCachedCategories);
   const [cartCount, setCartCount] = useState(0);
+  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
   const [cardPayments, setCardPayments] = useState(false);
   const [settings, setSettings] = useState<Record<string, string | number | boolean | null>>(() => {
     if (!sessionMatchesBuild()) return {};
@@ -78,12 +82,14 @@ export function ShopProvider({ children }: { children: ReactNode }) {
         user: ShopUser;
         categories: ShopCategory[];
         cart: { count: number };
+        wishlistIds?: string[];
         card?: boolean;
         settings: Record<string, string | number | boolean | null>;
       }>("/api/bootstrap");
       setUser(data.user);
       setCategories(data.categories);
       setCartCount(data.cart.count);
+      setWishlistIds(data.wishlistIds ?? []);
       setCardPayments(Boolean(data.card));
       setSettings(data.settings);
       try {
@@ -94,10 +100,27 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       setSettings({});
+      setWishlistIds([]);
     } finally {
       setReady(true);
     }
   }
+
+  const refreshWishlist = useCallback(async () => {
+    try {
+      const products = await api<{ id: string }[]>("/api/account/wishlist");
+      setWishlistIds(products.map((p) => p.id));
+    } catch {
+      setWishlistIds([]);
+    }
+  }, []);
+
+  const toggleWishlist = useCallback(async (productId: string) => {
+    const result = await api<{ saved: boolean }>(`/api/account/wishlist/${productId}`, { method: "POST" });
+    setWishlistIds((ids) =>
+      result.saved ? (ids.includes(productId) ? ids : [...ids, productId]) : ids.filter((id) => id !== productId),
+    );
+  }, []);
 
   useEffect(() => {
     syncSessionBuildId();
@@ -111,8 +134,22 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, categories, cartCount, cardPayments, settings, spotlightSlug, setSpotlightSlug, refresh, setCartCount }),
-    [user, ready, categories, cartCount, cardPayments, settings, spotlightSlug],
+    () => ({
+      user,
+      ready,
+      categories,
+      cartCount,
+      wishlistIds,
+      cardPayments,
+      settings,
+      spotlightSlug,
+      setSpotlightSlug,
+      refresh,
+      refreshWishlist,
+      toggleWishlist,
+      setCartCount,
+    }),
+    [user, ready, categories, cartCount, wishlistIds, cardPayments, settings, spotlightSlug, refreshWishlist, toggleWishlist],
   );
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
