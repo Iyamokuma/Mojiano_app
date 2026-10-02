@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, peekApi } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
@@ -41,6 +41,8 @@ export function AdminCatalogue() {
     () => peekApi("/api/admin/products") !== undefined && peekApi("/api/admin/categories") !== undefined,
   );
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
 
   async function loadProducts(q = query) {
     const path = q ? `/api/admin/products?q=${encodeURIComponent(q)}` : "/api/admin/products";
@@ -76,7 +78,30 @@ export function AdminCatalogue() {
     setCategories((current) => current.map((category) => (category.id === id ? { ...category, ...updated } : category)));
   }
 
-  const filtered = useMemo(() => products, [products]);
+  async function deleteProducts(ids: string[]) {
+    if (!ids.length || deleting) return;
+    const label = ids.length === 1 ? "this product" : `${ids.length} products`;
+    if (!window.confirm(`Delete ${label}? They will be removed from the shop.`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api("/api/admin/products/delete", { method: "POST", body: JSON.stringify({ ids }) });
+      setSelected((current) => current.filter((id) => !ids.includes(id)));
+      await loadProducts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete those products.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  const filtered = products;
+  const visibleIds = filtered.map((product) => product.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
 
   return (
     <div className="space-y-6">
@@ -105,7 +130,7 @@ export function AdminCatalogue() {
       {tab === "products" ? (
         <>
           <form
-            className="max-w-sm"
+            className="flex max-w-3xl flex-wrap items-center gap-3"
             onSubmit={(event) => {
               event.preventDefault();
               void loadProducts();
@@ -115,7 +140,35 @@ export function AdminCatalogue() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name or SKU"
+              className="max-w-sm"
             />
+            {filtered.length ? (
+              <label className="inline-flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={() => {
+                    setSelected((current) =>
+                      allVisibleSelected
+                        ? current.filter((id) => !visibleIds.includes(id))
+                        : [...new Set([...current, ...visibleIds])],
+                    );
+                  }}
+                  className="h-4 w-4 accent-ink"
+                />
+                Select all
+              </label>
+            ) : null}
+            {selected.length ? (
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void deleteProducts(selected)}
+                className="inline-flex h-11 items-center rounded-full bg-danger px-5 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deleting ? "Deleting…" : `Delete selected (${selected.length})`}
+              </button>
+            ) : null}
           </form>
           <div className="grid gap-3">
             {filtered.length === 0 ? (
@@ -133,6 +186,15 @@ export function AdminCatalogue() {
             {filtered.map((product) => (
               <Panel key={product.id} className="p-4 sm:p-4">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <label className="inline-flex shrink-0 items-center">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(product.id)}
+                      onChange={() => toggleSelected(product.id)}
+                      aria-label={`Select ${product.name}`}
+                      className="h-4 w-4 accent-ink"
+                    />
+                  </label>
                   <Link to={`/admin/catalogue/${product.id}`} className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-canvas-warm">
                     {product.images[0] ? (
                       <img src={resolveProductImageUrl(product.images[0].url)} alt="" className="h-full w-full object-contain" />
@@ -180,6 +242,14 @@ export function AdminCatalogue() {
                       className="text-xs uppercase tracking-[0.14em] text-muted hover:text-ink"
                     >
                       {product.isActive ? "On floor" : "Bring back"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => void deleteProducts([product.id])}
+                      className="text-xs uppercase tracking-[0.14em] text-danger hover:text-ink disabled:opacity-60"
+                    >
+                      Delete
                     </button>
                   </div>
                 </div>

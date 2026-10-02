@@ -1039,7 +1039,7 @@ app.get("/api/admin/products", requireAdmin, async (req, res) => {
         images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } },
       },
       orderBy: { updatedAt: "desc" },
-      take: 120,
+      take: 500,
     }),
   );
 });
@@ -1242,6 +1242,43 @@ app.patch("/api/admin/products/:id", requireAdmin, async (req, res) => {
     include: productAdminInclude,
   });
   res.json(product);
+});
+
+async function retireProducts(ids: string[]) {
+  const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))].slice(0, 500);
+  if (!unique.length) return 0;
+  const products = await prisma.product.findMany({
+    where: { id: { in: unique }, deletedAt: null },
+    select: { id: true, sku: true, slug: true },
+  });
+  if (!products.length) return 0;
+  const stamp = Date.now().toString(36);
+  await prisma.$transaction([
+    prisma.cartItem.deleteMany({ where: { productId: { in: products.map((product) => product.id) } } }),
+    prisma.wishlistItem.deleteMany({ where: { productId: { in: products.map((product) => product.id) } } }),
+    ...products.map((product) =>
+      prisma.product.update({
+        where: { id: product.id },
+        data: {
+          deletedAt: new Date(),
+          isActive: false,
+          sku: `${product.sku}-deleted-${stamp}`.slice(0, 80),
+          slug: `${product.slug}-deleted-${stamp}`.slice(0, 120),
+        },
+      }),
+    ),
+  ]);
+  return products.length;
+}
+
+app.post("/api/admin/products/delete", requireAdmin, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? (req.body.ids as unknown[]).map(String) : [];
+  if (!ids.length) {
+    res.status(400).json({ error: "Choose at least one product." });
+    return;
+  }
+  const deleted = await retireProducts(ids);
+  res.json({ deleted });
 });
 
 app.post("/api/admin/products/:id/images", requireAdmin, async (req, res) => {
