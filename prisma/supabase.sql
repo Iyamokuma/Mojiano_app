@@ -110,6 +110,17 @@ CREATE TABLE "ProductImage" (
 );
 
 -- CreateTable
+CREATE TABLE "StoredImage" (
+    "id" TEXT NOT NULL,
+    "bytes" BYTEA NOT NULL,
+    "contentType" TEXT NOT NULL,
+    "filename" TEXT NOT NULL DEFAULT '',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "StoredImage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "ProductVariant" (
     "id" TEXT NOT NULL,
     "productId" TEXT NOT NULL,

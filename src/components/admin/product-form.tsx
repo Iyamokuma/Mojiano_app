@@ -424,7 +424,7 @@ export function AdminProductForm() {
                             main ? "ring-ink" : "ring-transparent hover:ring-line",
                           )}
                         >
-                          <img src={resolveProductImageUrl(image.url)} alt="" className="aspect-square w-full object-cover" />
+                          <img src={resolveProductImageUrl(image.url)} alt="" className="aspect-square w-full bg-canvas object-contain" />
                         </button>
                         {main ? (
                           <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-ink px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-white">

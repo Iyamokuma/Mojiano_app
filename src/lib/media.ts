@@ -104,7 +104,7 @@ export function heroArchImage(slug: string, fallbackImage?: string | null) {
 /** Product photos from admin upload (relative path or Supabase public URL). */
 export function resolveProductImageUrl(url: string) {
   const next = resolveImageUrl(String(url ?? "").trim());
-  if (!next) return next;
+  if (!next || next.includes("/uploads/products/")) return "";
   if (/^https?:\/\//i.test(next)) return next;
   if (next.startsWith("/") && typeof window !== "undefined") {
     return `${window.location.origin}${next}`;

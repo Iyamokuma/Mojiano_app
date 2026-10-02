@@ -169,6 +169,14 @@ model ProductImage {
   @@index([productId, sortOrder])
 }
 
+model StoredImage {
+  id          String   @id @default(cuid())
+  bytes       Bytes
+  contentType String
+  filename    String   @default("")
+  createdAt   DateTime @default(now())
+}
+
 model ProductVariant {
   id        String  @id @default(cuid())
   productId String

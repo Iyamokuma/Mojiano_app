@@ -17,7 +17,7 @@ import { FlashBanner } from "@/components/storefront/flash-banner";
 import { OrderSummary, type OrderDetail } from "@/components/storefront/order-summary";
 import { useShop } from "@/context/shop";
 import { api, peekApi } from "@/lib/api";
-import { resolveImageUrl } from "@/lib/media";
+import { resolveProductImageUrl } from "@/lib/media";
 import { formatGBP } from "@/lib/money";
 import { lastPage, setFlash } from "@/lib/navigation-memory";
 import { cn, safeNextPath } from "@/lib/utils";
@@ -202,7 +202,7 @@ function BasketPage() {
         <ul className="mt-8 divide-y divide-line border-y border-line">
           {cart.items.map((item) => (
             <li key={item.id} className="flex gap-4 py-5">
-              <img src={item.product.images[0]?.url ? resolveImageUrl(item.product.images[0].url) : undefined} alt="" className="h-24 w-20 rounded-xl object-cover" />
+              <img src={item.product.images[0]?.url ? resolveProductImageUrl(item.product.images[0].url) : undefined} alt="" className="h-24 w-20 rounded-xl object-contain" />
               <div className="flex-1">
                 <Link to={`/product/${item.product.slug}`} className="font-medium">{item.product.name}</Link>
                 <p className="text-sm">{formatGBP(item.unitPrice)}</p>

@@ -31,8 +31,8 @@ import {
 import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../src/lib/validations";
 import { rateLimit } from "../src/lib/rate-limit";
 import { safeNextPath, slugify } from "../src/lib/utils";
-import { isProductImageUrl, supabaseStorageReady, uploadProductImageBuffer } from "./product-image-storage";
-import { productImageMemoryUpload, productImageUpload, UPLOAD_DIR } from "./upload";
+import { isProductImageUrl, mediaPath } from "./product-image-storage";
+import { productImageMemoryUpload, UPLOAD_DIR } from "./upload";
 import { sendPasswordResetEmail, sendVerifyEmail } from "./email";
 import { storeUrl } from "./site-url";
 import { createStripeCheckoutSession, getStripe, markOrderPaidFromSession, stripeEnabled } from "./stripe";
@@ -1056,9 +1056,19 @@ app.get("/api/admin/products/:id", requireAdmin, async (req, res) => {
   res.json(product);
 });
 
+app.get("/api/media/:id", async (req, res) => {
+  const image = await prisma.storedImage.findUnique({ where: { id: param(req.params.id) } });
+  if (!image) {
+    res.status(404).end();
+    return;
+  }
+  res.set("Content-Type", image.contentType || "image/jpeg");
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.send(Buffer.from(image.bytes));
+});
+
 app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
-  const upload = supabaseStorageReady() ? productImageMemoryUpload : productImageUpload;
-  upload.single("file")(req, res, (error) => {
+  productImageMemoryUpload.single("file")(req, res, (error) => {
     if (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
       return;
@@ -1067,21 +1077,19 @@ app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
   });
 }, async (req, res) => {
   const file = req.file;
-  if (!file) {
+  if (!file?.buffer?.length) {
     res.status(400).json({ error: "Choose an image to upload." });
     return;
   }
   try {
-    if (supabaseStorageReady() && "buffer" in file && file.buffer?.length) {
-      const url = await uploadProductImageBuffer(file.buffer, file.originalname, file.mimetype);
-      res.json({ url, alt: file.originalname });
-      return;
-    }
-    if (!file.filename) {
-      res.status(400).json({ error: "Could not store that image." });
-      return;
-    }
-    res.json({ url: `/uploads/products/${file.filename}`, alt: file.originalname });
+    const saved = await prisma.storedImage.create({
+      data: {
+        bytes: file.buffer,
+        contentType: file.mimetype || "image/jpeg",
+        filename: file.originalname.slice(0, 180),
+      },
+    });
+    res.json({ url: mediaPath(saved.id), alt: "" });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
   }

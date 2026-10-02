@@ -135,7 +135,7 @@ export function AdminCatalogue() {
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                   <Link to={`/admin/catalogue/${product.id}`} className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-canvas-warm">
                     {product.images[0] ? (
-                      <img src={resolveProductImageUrl(product.images[0].url)} alt="" className="h-full w-full object-cover" />
+                      <img src={resolveProductImageUrl(product.images[0].url)} alt="" className="h-full w-full object-contain" />
                     ) : null}
                   </Link>
                   <div className="min-w-0 flex-1">

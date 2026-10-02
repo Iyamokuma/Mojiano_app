@@ -35,7 +35,7 @@ function imageFileFilter(_req: Request, file: Express.Multer.File, cb: multer.Fi
   cb(null, true);
 }
 
-const limits = { fileSize: 8 * 1024 * 1024, files: 8 };
+const limits = { fileSize: 4 * 1024 * 1024, files: 8 };
 
 export const productImageUpload = multer({
   storage,

@@ -28,7 +28,9 @@ export function ProductCard({ product }: { product: ProductCardData }) {
   const price = effectivePrice(product);
   const save = discountPercent(price, product.compareAtPrice);
   const image = product.images[0];
+  const imageUrl = image ? compactImageUrl(image.url) : "";
   const isNew = Boolean(product.newArrival);
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <article className="group flex h-full flex-col items-center text-center">
@@ -37,14 +39,15 @@ export function ProductCard({ product }: { product: ProductCardData }) {
           <div className="absolute right-2 top-2 z-10 rounded-full bg-white/90 p-1 shadow-sm">
             <WishlistButton productId={product.id} size="sm" />
           </div>
-          {image ? (
+          {imageUrl && !imageFailed ? (
             <img
-              src={compactImageUrl(image.url)}
-              alt={image.alt || product.name}
+              src={imageUrl}
+              alt={product.name}
               loading="lazy"
               decoding="async"
               sizes="(min-width: 1280px) 25vw, (min-width: 768px) 33vw, 50vw"
-              className="h-full w-full rounded-2xl object-cover object-center transition duration-500 group-hover:scale-[1.03]"
+              onError={() => setImageFailed(true)}
+              className="h-full w-full rounded-2xl object-contain object-center transition duration-500 group-hover:scale-[1.03]"
             />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted">No image</div>

@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/feedback";
 import { MojianoLoader } from "@/components/ui/mojiano-loader";
 import { useShop } from "@/context/shop";
 import { api } from "@/lib/api";
-import { resolveImageUrl } from "@/lib/media";
+import { resolveProductImageUrl } from "@/lib/media";
 import { discountPercent, effectivePrice, formatGBP } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +66,9 @@ export function ProductPage() {
       : effectivePrice(product)
     : 0;
   const save = product ? discountPercent(price, product.compareAtPrice) : null;
-  const images = (product?.images ?? []).map((image) => ({ ...image, url: resolveImageUrl(image.url) }));
+  const images = (product?.images ?? [])
+    .map((image) => ({ ...image, url: resolveProductImageUrl(image.url) }))
+    .filter((image) => image.url);
   const main = images[activeImage] ?? images[0];
   const wa = product ? waLink(settings.whatsappNumber, `Hello Mojiano, I would like to ask about ${product.name}.`) : null;
 
@@ -165,7 +167,7 @@ export function ProductPage() {
                     index === activeImage ? "ring-gold" : "ring-transparent hover:ring-line",
                   )}
                 >
-                  <img src={image.url} alt="" className="aspect-square w-full object-cover" />
+                  <img src={image.url} alt="" className="aspect-square w-full object-contain" />
                 </button>
               ))}
             </div>
@@ -277,14 +279,14 @@ export function ProductPage() {
                 }}
                 className="overflow-hidden rounded-[1.75rem] bg-canvas-warm"
               >
-                <img src={image.url} alt={image.alt || `${product.name} ${index + 1}`} className="w-full object-cover" />
+                <img src={image.url} alt={product.name} className="aspect-square w-full object-contain" />
               </button>
             ))}
           </div>
         </section>
       ) : images[0] ? (
         <section className="mt-14 overflow-hidden rounded-[1.75rem] bg-canvas-warm">
-          <img src={images[0].url} alt={images[0].alt || product.name} className="w-full object-cover" />
+          <img src={images[0].url} alt={product.name} className="aspect-square w-full object-contain" />
         </section>
       ) : null}
 

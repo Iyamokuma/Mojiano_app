@@ -19,10 +19,21 @@ function supabasePublicPrefix() {
 export function isProductImageUrl(url: string) {
   const value = String(url ?? "").trim();
   if (!value) return false;
+  if (/^\/api\/media\/[A-Za-z0-9_-]+$/.test(value)) return true;
   if (/^\/uploads\/products\/[A-Za-z0-9._-]+$/.test(value)) return true;
+  try {
+    const parsed = new URL(value);
+    if (/^\/api\/media\/[A-Za-z0-9_-]+$/.test(parsed.pathname)) return true;
+  } catch {
+    /* not an absolute URL */
+  }
   const prefix = supabasePublicPrefix();
   if (prefix && value.startsWith(prefix)) return true;
   return false;
+}
+
+export function mediaPath(id: string) {
+  return `/api/media/${id}`;
 }
 
 async function ensureBucket() {
