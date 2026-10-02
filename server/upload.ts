@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { Request } from "express";
 import multer from "multer";
 import { customAlphabet } from "nanoid";
 
@@ -24,16 +25,26 @@ const storage = multer.diskStorage({
   },
 });
 
+function imageFileFilter(_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const ok = ALLOWED.has(ext) && file.mimetype.startsWith("image/");
+  if (!ok) {
+    cb(new Error("Please upload a JPG, PNG, WEBP or GIF."));
+    return;
+  }
+  cb(null, true);
+}
+
+const limits = { fileSize: 8 * 1024 * 1024, files: 8 };
+
 export const productImageUpload = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024, files: 8 },
-  fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const ok = ALLOWED.has(ext) && file.mimetype.startsWith("image/");
-    if (!ok) {
-      cb(new Error("Please upload a JPG, PNG, WEBP or GIF."));
-      return;
-    }
-    cb(null, true);
-  },
+  limits,
+  fileFilter: imageFileFilter,
+});
+
+export const productImageMemoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits,
+  fileFilter: imageFileFilter,
 });

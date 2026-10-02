@@ -1,11 +1,11 @@
 // server/index.ts
 import "dotenv/config";
-import path2 from "path";
+import path3 from "path";
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import bcrypt from "bcryptjs";
-import { customAlphabet as customAlphabet2 } from "nanoid";
+import { customAlphabet as customAlphabet3 } from "nanoid";
 
 // server/db.ts
 import { PrismaClient } from "@prisma/client";
@@ -15,19 +15,19 @@ var globalForPrisma = globalThis;
 function datasourceUrl() {
   const raw = process.env.DATABASE_URL ?? "";
   try {
-    const url = new URL(raw);
+    const url2 = new URL(raw);
     const serverless = Boolean(process.env.VERCEL);
-    if (serverless && url.port === "6543") {
-      url.port = "5432";
-      url.searchParams.delete("pgbouncer");
+    if (serverless && url2.port === "6543") {
+      url2.port = "5432";
+      url2.searchParams.delete("pgbouncer");
     }
-    if (!url.searchParams.has("connection_limit")) {
-      url.searchParams.set("connection_limit", serverless ? "1" : "10");
+    if (!url2.searchParams.has("connection_limit")) {
+      url2.searchParams.set("connection_limit", serverless ? "1" : "10");
     }
-    if (!url.searchParams.has("connect_timeout")) url.searchParams.set("connect_timeout", "8");
-    if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "8");
-    if (!url.searchParams.has("sslmode")) url.searchParams.set("sslmode", "require");
-    return url.toString();
+    if (!url2.searchParams.has("connect_timeout")) url2.searchParams.set("connect_timeout", "8");
+    if (!url2.searchParams.has("pool_timeout")) url2.searchParams.set("pool_timeout", "8");
+    if (!url2.searchParams.has("sslmode")) url2.searchParams.set("sslmode", "require");
+    return url2.toString();
   } catch {
     return raw;
   }
@@ -129,8 +129,8 @@ var CATEGORY_IMAGE_OVERRIDES = {
   "fashion-beauty": "https://images.unsplash.com/photo-1489987707025-afc232f7aed0?auto=format&fit=crop&w=1200&q=80",
   "furniture-sofas": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1200&q=80"
 };
-function resolveImageUrl(url) {
-  let next = url;
+function resolveImageUrl(url2) {
+  let next = url2;
   for (const [from, to] of Object.entries(UNSPLASH_REPLACEMENTS)) {
     if (next.includes(from)) next = next.replaceAll(from, to);
   }
@@ -141,11 +141,23 @@ function resolveCategoryImage(slug, image) {
   if (!image) return image ?? null;
   return resolveImageUrl(image);
 }
+function resolveProductImageUrl(url2) {
+  const next = resolveImageUrl(String(url2 ?? "").trim());
+  if (!next) return next;
+  if (/^https?:\/\//i.test(next)) return next;
+  if (next.startsWith("/") && typeof window !== "undefined") {
+    return `${window.location.origin}${next}`;
+  }
+  return next;
+}
 function withFixedProductImages(product) {
   if (!product.images?.length) return product;
   return {
     ...product,
-    images: product.images.map((image) => ({ ...image, url: resolveImageUrl(image.url) }))
+    images: product.images.map((image) => ({
+      ...image,
+      url: resolveProductImageUrl(image.url)
+    }))
   };
 }
 
@@ -183,8 +195,8 @@ function ensureCartCookie(req, res) {
   }
   return sessionId;
 }
-async function loadCart(id2) {
-  return prisma.cart.findUnique({ where: { id: id2 }, include: cartInclude });
+async function loadCart(id3) {
+  return prisma.cart.findUnique({ where: { id: id3 }, include: cartInclude });
 }
 async function getCart(req) {
   const user = readUser(req);
@@ -563,13 +575,78 @@ function safeNextPath(value, fallback = "/account") {
   return value;
 }
 
+// server/product-image-storage.ts
+import path from "node:path";
+import { customAlphabet } from "nanoid";
+
+// server/supabase.ts
+import { createClient as createClient2 } from "@supabase/supabase-js";
+var url = process.env.SUPABASE_URL ?? "";
+var serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+var globalForSupabase = globalThis;
+var supabaseAdmin = globalForSupabase.supabaseAdmin ?? createClient2(url, serviceKey, {
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+if (process.env.NODE_ENV !== "production") globalForSupabase.supabaseAdmin = supabaseAdmin;
+
+// server/product-image-storage.ts
+var id = customAlphabet("abcdefghijkmnopqrstuvwxyz23456789", 10);
+var BUCKET = process.env.SUPABASE_PRODUCT_BUCKET ?? "product-images";
+var bucketReady = null;
+function supabaseStorageReady() {
+  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+}
+function supabasePublicPrefix() {
+  const base = process.env.SUPABASE_URL?.replace(/\/$/, "") ?? "";
+  return base ? `${base}/storage/v1/object/public/${BUCKET}/` : "";
+}
+function isProductImageUrl(url2) {
+  const value = String(url2 ?? "").trim();
+  if (!value) return false;
+  if (/^\/uploads\/products\/[A-Za-z0-9._-]+$/.test(value)) return true;
+  const prefix = supabasePublicPrefix();
+  if (prefix && value.startsWith(prefix)) return true;
+  return false;
+}
+async function ensureBucket() {
+  if (!supabaseStorageReady()) return;
+  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets();
+  if (listError) throw listError;
+  if (buckets?.some((bucket) => bucket.name === BUCKET)) return;
+  const { error } = await supabaseAdmin.storage.createBucket(BUCKET, {
+    public: true,
+    fileSizeLimit: 8 * 1024 * 1024
+  });
+  if (error && !/already exists/i.test(error.message)) throw error;
+}
+async function readyBucket() {
+  if (!bucketReady) bucketReady = ensureBucket();
+  await bucketReady;
+}
+async function uploadProductImageBuffer(buffer, originalName, mimeType) {
+  if (!supabaseStorageReady()) {
+    throw new Error("Image storage is not configured on the server.");
+  }
+  await readyBucket();
+  const ext = path.extname(originalName).toLowerCase() || ".jpg";
+  const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
+  const objectPath = `products/${Date.now()}-${id()}${safeExt}`;
+  const { error } = await supabaseAdmin.storage.from(BUCKET).upload(objectPath, buffer, {
+    contentType: mimeType || "image/jpeg",
+    upsert: false
+  });
+  if (error) throw error;
+  const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(objectPath);
+  return data.publicUrl;
+}
+
 // server/upload.ts
 import fs from "node:fs";
-import path from "node:path";
+import path2 from "node:path";
 import multer from "multer";
-import { customAlphabet } from "nanoid";
-var id = customAlphabet("abcdefghijkmnopqrstuvwxyz23456789", 10);
-var UPLOAD_DIR = process.env.VERCEL ? path.join("/tmp", "uploads", "products") : path.join(process.cwd(), "public", "uploads", "products");
+import { customAlphabet as customAlphabet2 } from "nanoid";
+var id2 = customAlphabet2("abcdefghijkmnopqrstuvwxyz23456789", 10);
+var UPLOAD_DIR = process.env.VERCEL ? path2.join("/tmp", "uploads", "products") : path2.join(process.cwd(), "public", "uploads", "products");
 var ALLOWED = /* @__PURE__ */ new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 try {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -578,22 +655,29 @@ try {
 var storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${Date.now()}-${id()}${ALLOWED.has(ext) ? ext : ".jpg"}`);
+    const ext = path2.extname(file.originalname).toLowerCase();
+    cb(null, `${Date.now()}-${id2()}${ALLOWED.has(ext) ? ext : ".jpg"}`);
   }
 });
+function imageFileFilter(_req, file, cb) {
+  const ext = path2.extname(file.originalname).toLowerCase();
+  const ok = ALLOWED.has(ext) && file.mimetype.startsWith("image/");
+  if (!ok) {
+    cb(new Error("Please upload a JPG, PNG, WEBP or GIF."));
+    return;
+  }
+  cb(null, true);
+}
+var limits = { fileSize: 8 * 1024 * 1024, files: 8 };
 var productImageUpload = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024, files: 8 },
-  fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const ok = ALLOWED.has(ext) && file.mimetype.startsWith("image/");
-    if (!ok) {
-      cb(new Error("Please upload a JPG, PNG, WEBP or GIF."));
-      return;
-    }
-    cb(null, true);
-  }
+  limits,
+  fileFilter: imageFileFilter
+});
+var productImageMemoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits,
+  fileFilter: imageFileFilter
 });
 
 // server/site-url.ts
@@ -843,7 +927,7 @@ app.get("/api/ready", (_req, res) => {
 });
 var PORT = Number(process.env.PORT ?? 4e3);
 var isProd = process.env.NODE_ENV === "production";
-var orderCode = customAlphabet2("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
+var orderCode = customAlphabet3("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 var adminGetMemo = /* @__PURE__ */ new Map();
 var shopMemo = /* @__PURE__ */ new Map();
 var ADMIN_GET_TTL = 12e3;
@@ -897,9 +981,6 @@ var productAdminInclude = {
   images: { orderBy: { sortOrder: "asc" } },
   variants: true
 };
-function isProductUploadUrl(url) {
-  return /^\/uploads\/products\/[A-Za-z0-9._-]+$/.test(url);
-}
 function parseVariants(body, productSku) {
   const list = Array.isArray(body) ? body : [];
   return list.map((item, index) => {
@@ -938,8 +1019,8 @@ app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use("/uploads/products", express.static(UPLOAD_DIR));
 app.use("/api/uploads/products", express.static(UPLOAD_DIR));
-app.use("/uploads", express.static(path2.join(process.cwd(), "public", "uploads")));
-app.use("/api/uploads", express.static(path2.join(process.cwd(), "public", "uploads")));
+app.use("/uploads", express.static(path3.join(process.cwd(), "public", "uploads")));
+app.use("/api/uploads", express.static(path3.join(process.cwd(), "public", "uploads")));
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.path.startsWith("/api/admin") && !req.path.startsWith("/api/admin/auth")) {
     res.on("finish", () => {
@@ -1743,20 +1824,34 @@ app.get("/api/admin/products/:id", requireAdmin, async (req, res) => {
   res.json(product);
 });
 app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
-  productImageUpload.single("file")(req, res, (error) => {
+  const upload = supabaseStorageReady() ? productImageMemoryUpload : productImageUpload;
+  upload.single("file")(req, res, (error) => {
     if (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
       return;
     }
     next();
   });
-}, (req, res) => {
+}, async (req, res) => {
   const file = req.file;
   if (!file) {
     res.status(400).json({ error: "Choose an image to upload." });
     return;
   }
-  res.json({ url: `/uploads/products/${file.filename}`, alt: file.originalname });
+  try {
+    if (supabaseStorageReady() && "buffer" in file && file.buffer?.length) {
+      const url2 = await uploadProductImageBuffer(file.buffer, file.originalname, file.mimetype);
+      res.json({ url: url2, alt: file.originalname });
+      return;
+    }
+    if (!file.filename) {
+      res.status(400).json({ error: "Could not store that image." });
+      return;
+    }
+    res.json({ url: `/uploads/products/${file.filename}`, alt: file.originalname });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
+  }
 });
 app.post("/api/admin/products", requireAdmin, async (req, res) => {
   const parsed = productSchema.safeParse(req.body);
@@ -1777,7 +1872,7 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
   }
   const images = Array.isArray(req.body.images) ? req.body.images : [];
   const primaryIndex = Math.max(0, Number(req.body.primaryIndex ?? 0));
-  const ordered = images.filter((image) => typeof image.url === "string" && isProductUploadUrl(image.url)).map((image) => ({ url: String(image.url), alt: String(image.alt ?? data.name) }));
+  const ordered = images.filter((image) => typeof image.url === "string" && isProductImageUrl(image.url)).map((image) => ({ url: String(image.url), alt: String(image.alt ?? data.name) }));
   if (primaryIndex > 0 && primaryIndex < ordered.length) {
     const [main] = ordered.splice(primaryIndex, 1);
     ordered.unshift(main);
@@ -1883,8 +1978,8 @@ app.post("/api/admin/products/:id/images", requireAdmin, async (req, res) => {
     res.status(404).json({ error: "Product not found." });
     return;
   }
-  const url = String(req.body.url ?? "");
-  if (!isProductUploadUrl(url)) {
+  const url2 = String(req.body.url ?? "");
+  if (!isProductImageUrl(url2)) {
     res.status(400).json({ error: "Upload an image first." });
     return;
   }
@@ -1892,7 +1987,7 @@ app.post("/api/admin/products/:id/images", requireAdmin, async (req, res) => {
   const image = await prisma.productImage.create({
     data: {
       productId: product.id,
-      url,
+      url: url2,
       alt: String(req.body.alt ?? product.name),
       sortOrder: (last._max.sortOrder ?? -1) + 1
     }
@@ -2125,10 +2220,10 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err instanceof Error ? err.message : "Server error." });
 });
 if (isProd && !process.env.VERCEL) {
-  const dist = path2.join(process.cwd(), "dist");
+  const dist = path3.join(process.cwd(), "dist");
   app.use(express.static(dist));
   app.get(/.*/, (_req, res) => {
-    res.sendFile(path2.join(dist, "index.html"));
+    res.sendFile(path3.join(dist, "index.html"));
   });
 }
 if (!process.env.VERCEL) {

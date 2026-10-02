@@ -31,7 +31,8 @@ import {
 import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../src/lib/validations";
 import { rateLimit } from "../src/lib/rate-limit";
 import { safeNextPath, slugify } from "../src/lib/utils";
-import { productImageUpload, UPLOAD_DIR } from "./upload";
+import { isProductImageUrl, supabaseStorageReady, uploadProductImageBuffer } from "./product-image-storage";
+import { productImageMemoryUpload, productImageUpload, UPLOAD_DIR } from "./upload";
 import { sendPasswordResetEmail, sendVerifyEmail } from "./email";
 import { storeUrl } from "./site-url";
 import { createStripeCheckoutSession, getStripe, markOrderPaidFromSession, stripeEnabled } from "./stripe";
@@ -110,10 +111,6 @@ const productAdminInclude = {
   images: { orderBy: { sortOrder: "asc" as const } },
   variants: true,
 } satisfies Prisma.ProductInclude;
-
-function isProductUploadUrl(url: string) {
-  return /^\/uploads\/products\/[A-Za-z0-9._-]+$/.test(url);
-}
 
 function parseVariants(body: unknown, productSku: string) {
   const list = Array.isArray(body) ? body : [];
@@ -1060,20 +1057,34 @@ app.get("/api/admin/products/:id", requireAdmin, async (req, res) => {
 });
 
 app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
-  productImageUpload.single("file")(req, res, (error) => {
+  const upload = supabaseStorageReady() ? productImageMemoryUpload : productImageUpload;
+  upload.single("file")(req, res, (error) => {
     if (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
       return;
     }
     next();
   });
-}, (req, res) => {
+}, async (req, res) => {
   const file = req.file;
   if (!file) {
     res.status(400).json({ error: "Choose an image to upload." });
     return;
   }
-  res.json({ url: `/uploads/products/${file.filename}`, alt: file.originalname });
+  try {
+    if (supabaseStorageReady() && "buffer" in file && file.buffer?.length) {
+      const url = await uploadProductImageBuffer(file.buffer, file.originalname, file.mimetype);
+      res.json({ url, alt: file.originalname });
+      return;
+    }
+    if (!file.filename) {
+      res.status(400).json({ error: "Could not store that image." });
+      return;
+    }
+    res.json({ url: `/uploads/products/${file.filename}`, alt: file.originalname });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
+  }
 });
 
 app.post("/api/admin/products", requireAdmin, async (req, res) => {
@@ -1096,7 +1107,7 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
   const images = Array.isArray(req.body.images) ? req.body.images as { url?: string; alt?: string }[] : [];
   const primaryIndex = Math.max(0, Number(req.body.primaryIndex ?? 0));
   const ordered = images
-    .filter((image) => typeof image.url === "string" && isProductUploadUrl(image.url))
+    .filter((image) => typeof image.url === "string" && isProductImageUrl(image.url))
     .map((image) => ({ url: String(image.url), alt: String(image.alt ?? data.name) }));
   if (primaryIndex > 0 && primaryIndex < ordered.length) {
     const [main] = ordered.splice(primaryIndex, 1);
@@ -1207,7 +1218,7 @@ app.post("/api/admin/products/:id/images", requireAdmin, async (req, res) => {
     return;
   }
   const url = String(req.body.url ?? "");
-  if (!isProductUploadUrl(url)) {
+  if (!isProductImageUrl(url)) {
     res.status(400).json({ error: "Upload an image first." });
     return;
   }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "re
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { ImagePlus, Star } from "lucide-react";
 import { api, peekApi, uploadImage } from "@/lib/api";
+import { resolveProductImageUrl } from "@/lib/media";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea, FieldError } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
@@ -423,7 +424,7 @@ export function AdminProductForm() {
                             main ? "ring-ink" : "ring-transparent hover:ring-line",
                           )}
                         >
-                          <img src={image.url} alt="" className="aspect-square w-full object-cover" />
+                          <img src={resolveProductImageUrl(image.url)} alt="" className="aspect-square w-full object-cover" />
                         </button>
                         {main ? (
                           <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-ink px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-white">

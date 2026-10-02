@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, peekApi } from "@/lib/api";
+import { resolveProductImageUrl } from "@/lib/media";
 import { formatGBP } from "@/lib/money";
 import { Eyebrow, Panel, StatusPill } from "@/components/admin/ui";
 import { Input } from "@/components/ui/field";
@@ -134,7 +135,7 @@ export function AdminCatalogue() {
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                   <Link to={`/admin/catalogue/${product.id}`} className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-canvas-warm">
                     {product.images[0] ? (
-                      <img src={product.images[0].url} alt="" className="h-full w-full object-cover" />
+                      <img src={resolveProductImageUrl(product.images[0].url)} alt="" className="h-full w-full object-cover" />
                     ) : null}
                   </Link>
                   <div className="min-w-0 flex-1">

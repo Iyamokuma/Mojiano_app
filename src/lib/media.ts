@@ -84,7 +84,7 @@ export function resolveImageUrl(url: string) {
 }
 
 export function compactImageUrl(url: string, width = 720) {
-  const next = resolveImageUrl(url);
+  const next = resolveProductImageUrl(url);
   if (!next.includes("images.unsplash.com")) return next;
   const sized = next.includes("w=") ? next.replace(/([?&])w=\d+/, `$1w=${width}`) : `${next}${next.includes("?") ? "&" : "?"}w=${width}`;
   return sized.includes("q=") ? sized.replace(/([?&])q=\d+/, "$1q=70") : `${sized}&q=70`;
@@ -101,10 +101,24 @@ export function heroArchImage(slug: string, fallbackImage?: string | null) {
   return raw ? compactImageUrl(raw, 900) : "";
 }
 
-export function withFixedProductImages<T extends { images?: Array<{ url: string }> }>(product: T): T {
+/** Product photos from admin upload (relative path or Supabase public URL). */
+export function resolveProductImageUrl(url: string) {
+  const next = resolveImageUrl(String(url ?? "").trim());
+  if (!next) return next;
+  if (/^https?:\/\//i.test(next)) return next;
+  if (next.startsWith("/") && typeof window !== "undefined") {
+    return `${window.location.origin}${next}`;
+  }
+  return next;
+}
+
+export function withFixedProductImages<T extends { images?: Array<{ url: string; alt?: string }> }>(product: T): T {
   if (!product.images?.length) return product;
   return {
     ...product,
-    images: product.images.map((image) => ({ ...image, url: resolveImageUrl(image.url) })),
+    images: product.images.map((image) => ({
+      ...image,
+      url: resolveProductImageUrl(image.url),
+    })),
   };
 }
