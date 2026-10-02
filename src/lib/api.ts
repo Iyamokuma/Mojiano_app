@@ -27,6 +27,12 @@ export function invalidateApiCache() {
   }
 }
 
+export function dropApiCache(prefix: string) {
+  for (const path of [...cache.keys()]) {
+    if (path === prefix || path.startsWith(`${prefix}?`)) cache.delete(path);
+  }
+}
+
 export function clearApiCache() {
   cache.clear();
   inflight.clear();

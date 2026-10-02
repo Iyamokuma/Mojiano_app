@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, peekApi } from "@/lib/api";
+import { api, dropApiCache, peekApi } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
 import { formatGBP } from "@/lib/money";
 import { Eyebrow, Panel, StatusPill } from "@/components/admin/ui";
@@ -42,7 +42,6 @@ export function AdminCatalogue() {
   );
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [deleting, setDeleting] = useState(false);
 
   async function loadProducts(q = query) {
     const path = q ? `/api/admin/products?q=${encodeURIComponent(q)}` : "/api/admin/products";
@@ -78,21 +77,17 @@ export function AdminCatalogue() {
     setCategories((current) => current.map((category) => (category.id === id ? { ...category, ...updated } : category)));
   }
 
-  async function deleteProducts(ids: string[]) {
-    if (!ids.length || deleting) return;
-    const label = ids.length === 1 ? "this product" : `${ids.length} products`;
-    if (!window.confirm(`Delete ${label}? They will be removed from the shop.`)) return;
-    setDeleting(true);
+  function deleteProducts(ids: string[]) {
+    if (!ids.length) return;
+    const removing = new Set(ids);
+    setProducts((current) => current.filter((product) => !removing.has(product.id)));
+    setSelected((current) => current.filter((id) => !removing.has(id)));
     setError(null);
-    try {
-      await api("/api/admin/products/delete", { method: "POST", body: JSON.stringify({ ids }) });
-      setSelected((current) => current.filter((id) => !ids.includes(id)));
-      await loadProducts();
-    } catch (err) {
+    dropApiCache("/api/admin/products");
+    void api("/api/admin/products/delete", { method: "POST", body: JSON.stringify({ ids }) }).catch((err) => {
       setError(err instanceof Error ? err.message : "Could not delete those products.");
-    } finally {
-      setDeleting(false);
-    }
+      void loadProducts();
+    });
   }
 
   function toggleSelected(id: string) {
@@ -162,11 +157,10 @@ export function AdminCatalogue() {
             {selected.length ? (
               <button
                 type="button"
-                disabled={deleting}
-                onClick={() => void deleteProducts(selected)}
-                className="inline-flex h-11 items-center rounded-full bg-danger px-5 text-sm font-medium text-white disabled:opacity-60"
+                onClick={() => deleteProducts(selected)}
+                className="inline-flex h-11 items-center rounded-full bg-danger px-5 text-sm font-medium text-white"
               >
-                {deleting ? "Deleting…" : `Delete selected (${selected.length})`}
+                {`Delete selected (${selected.length})`}
               </button>
             ) : null}
           </form>
@@ -245,9 +239,8 @@ export function AdminCatalogue() {
                     </button>
                     <button
                       type="button"
-                      disabled={deleting}
-                      onClick={() => void deleteProducts([product.id])}
-                      className="text-xs uppercase tracking-[0.14em] text-danger hover:text-ink disabled:opacity-60"
+                      onClick={() => deleteProducts([product.id])}
+                      className="text-xs uppercase tracking-[0.14em] text-danger hover:text-ink"
                     >
                       Delete
                     </button>
