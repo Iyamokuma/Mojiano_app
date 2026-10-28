@@ -10,15 +10,17 @@ function datasourceUrl() {
   try {
     const url = new URL(raw);
     const serverless = Boolean(process.env.VERCEL);
-    if (serverless && url.port === "6543") {
-      url.port = "5432";
-      url.searchParams.delete("pgbouncer");
+    // Supabase session mode (5432) caps the whole project at 15 clients, so busy moments
+    // on Vercel failed with EMAXCONNSESSION. Transaction mode (6543) is built for serverless.
+    if (serverless && url.hostname.endsWith("pooler.supabase.com")) {
+      url.port = "6543";
+      url.searchParams.set("pgbouncer", "true");
     }
     if (!url.searchParams.has("connection_limit")) {
-      url.searchParams.set("connection_limit", serverless ? "1" : "10");
+      url.searchParams.set("connection_limit", serverless ? "5" : "10");
     }
     if (!url.searchParams.has("connect_timeout")) url.searchParams.set("connect_timeout", "8");
-    if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "8");
+    if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "20");
     if (!url.searchParams.has("sslmode")) url.searchParams.set("sslmode", "require");
     return url.toString();
   } catch {
@@ -26,11 +28,35 @@ function datasourceUrl() {
   }
 }
 
+/** Connection hiccups (pool full, cold socket) that are worth one more try. */
+function isTransient(error: unknown) {
+  const code = (error as { code?: string })?.code;
+  if (code && ["P1001", "P1002", "P1008", "P1017", "P2024"].includes(code)) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /EMAXCONN|max clients reached|Can't reach database|Timed out fetching a new connection|Connection (terminated|reset|closed)|ECONNRESET|server has closed the connection/i.test(
+    message,
+  );
+}
+
 function createClient() {
-  return new PrismaClient({
+  const client = new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     datasources: { db: { url: datasourceUrl() } },
   });
+  return client.$extends({
+    query: {
+      async $allOperations({ args, query }) {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await query(args);
+          } catch (error) {
+            if (attempt >= 2 || !isTransient(error)) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          }
+        }
+      },
+    },
+  }) as unknown as PrismaClient;
 }
 
 export const prisma =

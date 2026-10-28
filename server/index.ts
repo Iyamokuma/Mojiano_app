@@ -193,12 +193,23 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
+const shopLoading = new Map<string, Promise<unknown>>();
+
+/** Short-lived cache; visitors who arrive together share one database round trip. */
 async function remember<T>(key: string, ttlMs: number, load: () => Promise<T>) {
   const hit = shopMemo.get(key);
   if (hit && Date.now() - hit.at < ttlMs) return hit.value as T;
-  const value = await load();
-  shopMemo.set(key, { at: Date.now(), value });
-  return value;
+  const pending = shopLoading.get(key);
+  if (pending) return pending as Promise<T>;
+  const request = load()
+    .then((value) => {
+      if (shopMemo.size > 500) shopMemo.clear();
+      shopMemo.set(key, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => shopLoading.delete(key));
+  shopLoading.set(key, request);
+  return request;
 }
 
 /** Storefront responses must not sit on the Vercel edge or browsers after deploy/data edits. */
@@ -285,7 +296,7 @@ app.get("/api/home", async (_req, res) => {
 app.get("/api/products", async (req, res) => {
   try {
     const q = String(req.query.q ?? "");
-    const result = await queryProducts({
+    const result = await remember(`products:${req.originalUrl}`, 3_000, () => queryProducts({
       q: q || undefined,
       categorySlug: String(req.query.category ?? "") || undefined,
       minPrice: req.query.minPrice ? Number(req.query.minPrice) * 100 : undefined,
@@ -295,7 +306,7 @@ app.get("/api/products", async (req, res) => {
       clearance: req.query.clearance === "1",
       sort: String(req.query.sort ?? "newest"),
       page: Number(req.query.page ?? 1),
-    });
+    }));
     storefrontNoStore(res);
     res.json(result);
   } catch (error) {

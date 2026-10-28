@@ -18,25 +18,47 @@ function datasourceUrl() {
   try {
     const url2 = new URL(raw);
     const serverless = Boolean(process.env.VERCEL);
-    if (serverless && url2.port === "6543") {
-      url2.port = "5432";
-      url2.searchParams.delete("pgbouncer");
+    if (serverless && url2.hostname.endsWith("pooler.supabase.com")) {
+      url2.port = "6543";
+      url2.searchParams.set("pgbouncer", "true");
     }
     if (!url2.searchParams.has("connection_limit")) {
-      url2.searchParams.set("connection_limit", serverless ? "1" : "10");
+      url2.searchParams.set("connection_limit", serverless ? "5" : "10");
     }
     if (!url2.searchParams.has("connect_timeout")) url2.searchParams.set("connect_timeout", "8");
-    if (!url2.searchParams.has("pool_timeout")) url2.searchParams.set("pool_timeout", "8");
+    if (!url2.searchParams.has("pool_timeout")) url2.searchParams.set("pool_timeout", "20");
     if (!url2.searchParams.has("sslmode")) url2.searchParams.set("sslmode", "require");
     return url2.toString();
   } catch {
     return raw;
   }
 }
+function isTransient(error) {
+  const code = error?.code;
+  if (code && ["P1001", "P1002", "P1008", "P1017", "P2024"].includes(code)) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /EMAXCONN|max clients reached|Can't reach database|Timed out fetching a new connection|Connection (terminated|reset|closed)|ECONNRESET|server has closed the connection/i.test(
+    message
+  );
+}
 function createClient() {
-  return new PrismaClient({
+  const client = new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     datasources: { db: { url: datasourceUrl() } }
+  });
+  return client.$extends({
+    query: {
+      async $allOperations({ args, query }) {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await query(args);
+          } catch (error) {
+            if (attempt >= 2 || !isTransient(error)) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          }
+        }
+      }
+    }
   });
 }
 var prisma = globalForPrisma.prisma ?? new Proxy({}, {
@@ -1084,12 +1106,19 @@ app.get("/api/health", async (_req, res) => {
     });
   }
 });
+var shopLoading = /* @__PURE__ */ new Map();
 async function remember(key, ttlMs, load) {
   const hit = shopMemo.get(key);
   if (hit && Date.now() - hit.at < ttlMs) return hit.value;
-  const value = await load();
-  shopMemo.set(key, { at: Date.now(), value });
-  return value;
+  const pending = shopLoading.get(key);
+  if (pending) return pending;
+  const request = load().then((value) => {
+    if (shopMemo.size > 500) shopMemo.clear();
+    shopMemo.set(key, { at: Date.now(), value });
+    return value;
+  }).finally(() => shopLoading.delete(key));
+  shopLoading.set(key, request);
+  return request;
 }
 function storefrontNoStore(res) {
   res.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
@@ -1162,7 +1191,7 @@ app.get("/api/home", async (_req, res) => {
 app.get("/api/products", async (req, res) => {
   try {
     const q = String(req.query.q ?? "");
-    const result = await queryProducts({
+    const result = await remember(`products:${req.originalUrl}`, 3e3, () => queryProducts({
       q: q || void 0,
       categorySlug: String(req.query.category ?? "") || void 0,
       minPrice: req.query.minPrice ? Number(req.query.minPrice) * 100 : void 0,
@@ -1172,7 +1201,7 @@ app.get("/api/products", async (req, res) => {
       clearance: req.query.clearance === "1",
       sort: String(req.query.sort ?? "newest"),
       page: Number(req.query.page ?? 1)
-    });
+    }));
     storefrontNoStore(res);
     res.json(result);
   } catch (error) {

@@ -38,7 +38,24 @@ export function clearApiCache() {
   inflight.clear();
 }
 
+const RETRY_DELAYS_MS = [400, 1000, 2000];
+
+/** Storefront reads ride out a cold start or a busy database instead of showing an error. */
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
+  const retryable = methodOf(init) === "GET" && path.startsWith("/api/") && !path.startsWith("/api/admin");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await sendOnce<T>(path, init);
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      const transient = status === undefined || status >= 500;
+      if (!retryable || !transient || attempt >= RETRY_DELAYS_MS.length) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+async function sendOnce<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers, ...rest } = init ?? {};
   const res = await fetch(path, {
     credentials: "include",
@@ -51,10 +68,12 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const data = (await res.json().catch(() => ({}))) as (T & { error?: string }) | null;
   if (!res.ok) {
-    throw new Error(
+    const error = new Error(
       (data && typeof data === "object" && "error" in data && data.error) ||
         (res.status === 404 ? "That service is unavailable. Please try again." : "Request failed"),
-    );
+    ) as Error & { status: number };
+    error.status = res.status;
+    throw error;
   }
   return data as T;
 }
