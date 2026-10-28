@@ -17,7 +17,11 @@ function datasourceUrl() {
       url.searchParams.set("pgbouncer", "true");
     }
     if (!url.searchParams.has("connection_limit")) {
-      url.searchParams.set("connection_limit", serverless ? "5" : "10");
+      url.searchParams.set("connection_limit", serverless ? "1" : "10");
+    }
+    // Idle Vercel instances otherwise keep their connection and fill the pooler's 200-client cap.
+    if (serverless && !url.searchParams.has("max_idle_connection_lifetime")) {
+      url.searchParams.set("max_idle_connection_lifetime", "5");
     }
     if (!url.searchParams.has("connect_timeout")) url.searchParams.set("connect_timeout", "8");
     if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "20");

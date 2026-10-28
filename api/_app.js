@@ -23,7 +23,10 @@ function datasourceUrl() {
       url2.searchParams.set("pgbouncer", "true");
     }
     if (!url2.searchParams.has("connection_limit")) {
-      url2.searchParams.set("connection_limit", serverless ? "5" : "10");
+      url2.searchParams.set("connection_limit", serverless ? "1" : "10");
+    }
+    if (serverless && !url2.searchParams.has("max_idle_connection_lifetime")) {
+      url2.searchParams.set("max_idle_connection_lifetime", "5");
     }
     if (!url2.searchParams.has("connect_timeout")) url2.searchParams.set("connect_timeout", "8");
     if (!url2.searchParams.has("pool_timeout")) url2.searchParams.set("pool_timeout", "20");
