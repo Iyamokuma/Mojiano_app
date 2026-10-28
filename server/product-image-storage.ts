@@ -30,7 +30,17 @@ export function isProductImageUrl(url: string) {
   }
   const prefix = supabasePublicPrefix();
   if (prefix && value.startsWith(prefix)) return true;
-  return false;
+  return isExternalImageUrl(value);
+}
+
+/** Image addresses pasted in by an admin, hosted elsewhere. */
+export function isExternalImageUrl(url: string) {
+  try {
+    const parsed = new URL(String(url ?? "").trim());
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 export function mediaPath(id: string) {

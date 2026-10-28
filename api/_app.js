@@ -614,7 +614,15 @@ function isProductImageUrl(url2) {
   }
   const prefix = supabasePublicPrefix();
   if (prefix && value.startsWith(prefix)) return true;
-  return false;
+  return isExternalImageUrl(value);
+}
+function isExternalImageUrl(url2) {
+  try {
+    const parsed = new URL(String(url2 ?? "").trim());
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 function mediaPath(id3) {
   return `/api/media/${id3}`;
