@@ -305,7 +305,8 @@ app.get("/api/products", async (req, res) => {
       outOfStock: String(req.query.availability ?? "").split(",").includes("out"),
       clearance: req.query.clearance === "1",
       sort: String(req.query.sort ?? "newest"),
-      page: Number(req.query.page ?? 1),
+      page: Math.max(1, Number(req.query.page ?? 1) || 1),
+      pageSize: Math.min(64, Math.max(1, Number(req.query.pageSize ?? 24) || 24)),
     }));
     storefrontNoStore(res);
     res.json(result);

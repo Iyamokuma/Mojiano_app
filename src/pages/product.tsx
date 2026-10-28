@@ -201,7 +201,7 @@ export function ProductPage() {
         <div>
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted">{product.category.name}</p>
           {product.brand ? <p className="mt-2 text-sm text-muted">{product.brand}</p> : null}
-          <h1 className="mt-2 font-display text-4xl leading-tight md:text-5xl">{product.name}</h1>
+          <h1 className="mt-2 font-display text-2xl leading-snug sm:text-3xl md:text-5xl md:leading-tight">{product.name}</h1>
           <div className="mt-5 flex flex-wrap items-end gap-3">
             <p className="text-2xl font-semibold">{formatGBP(price)}</p>
             {product.compareAtPrice && product.compareAtPrice > price ? (

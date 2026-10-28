@@ -110,14 +110,38 @@ function HomePage() {
   );
 }
 
+const CATALOG_ROWS_PER_PAGE = 8;
+
+/** Matches ProductGrid: 2 columns, 3 from md, 4 from xl. */
+function gridColumns() {
+  if (typeof window === "undefined") return 4;
+  if (window.matchMedia("(min-width: 80rem)").matches) return 4;
+  if (window.matchMedia("(min-width: 48rem)").matches) return 3;
+  return 2;
+}
+
+function useCatalogPageSize() {
+  const [columns, setColumns] = useState(gridColumns);
+  useEffect(() => {
+    const onResize = () => setColumns(gridColumns());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return columns * CATALOG_ROWS_PER_PAGE;
+}
+
 function CatalogPage({ title, categorySlug }: { title?: string; categorySlug?: string }) {
   const [params] = useSearchParams();
+  const pageSize = useCatalogPageSize();
   const query = new URLSearchParams(params);
   if (categorySlug) query.set("category", categorySlug);
+  query.set("pageSize", String(pageSize));
   const path = `/api/products?${query.toString()}`;
   const [result, setResult] = useState<{
     products: ProductCardData[];
     total: number;
+    page: number;
+    pageCount: number;
     facets: CatalogFacets;
   } | null>(() => peekApi(path) ?? null);
   const [failed, setFailed] = useState(false);
@@ -125,6 +149,7 @@ function CatalogPage({ title, categorySlug }: { title?: string; categorySlug?: s
   useEffect(() => {
     const nextQuery = new URLSearchParams(params);
     if (categorySlug) nextQuery.set("category", categorySlug);
+    nextQuery.set("pageSize", String(pageSize));
     const nextPath = `/api/products?${nextQuery.toString()}`;
     const cached = peekApi<NonNullable<typeof result>>(nextPath);
     if (cached) {
@@ -139,7 +164,7 @@ function CatalogPage({ title, categorySlug }: { title?: string; categorySlug?: s
         setResult(data);
       })
       .catch(() => setFailed(true));
-  }, [params, categorySlug]);
+  }, [params, categorySlug, pageSize]);
 
   const heading = title ?? (params.get("q") ? `Results for “${params.get("q")}”` : "All products");
 
@@ -161,6 +186,8 @@ function CatalogPage({ title, categorySlug }: { title?: string; categorySlug?: s
       categorySlug={categorySlug}
       products={result.products}
       total={result.total}
+      page={result.page}
+      pageCount={result.pageCount}
       facets={result.facets}
     />
   );

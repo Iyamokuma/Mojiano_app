@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronDown, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import { ProductGrid, type ProductCardData } from "@/components/storefront/product-card";
 import { EmptyState } from "@/components/ui/feedback";
 import { buttonVariants } from "@/components/ui/button";
@@ -28,12 +28,16 @@ export function CatalogLayout({
   categorySlug,
   products,
   total,
+  page,
+  pageCount,
   facets,
 }: {
   title: string;
   categorySlug?: string;
   products: ProductCardData[];
   total: number;
+  page: number;
+  pageCount: number;
   facets: CatalogFacets;
 }) {
   const [params] = useSearchParams();
@@ -49,7 +53,9 @@ export function CatalogLayout({
   const sort = params.get("sort") ?? "newest";
   const q = params.get("q") ?? "";
 
+  /** Filters and sorting start again from the first page. */
   function setParam(next: URLSearchParams) {
+    next.delete("page");
     const search = next.toString();
     navigate({ pathname: categorySlug ? `/category/${categorySlug}` : "/shop", search: search ? `?${search}` : "" });
   }
@@ -68,6 +74,24 @@ export function CatalogLayout({
     else next.set("sort", value);
     setParam(next);
   }
+
+  function goToPage(target: number) {
+    const next = new URLSearchParams(params);
+    if (target <= 1) next.delete("page");
+    else next.set("page", String(target));
+    const search = next.toString();
+    navigate({ pathname: categorySlug ? `/category/${categorySlug}` : "/shop", search: search ? `?${search}` : "" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // A bigger page size (e.g. after rotating a tablet) can leave the URL past the last page.
+  useEffect(() => {
+    if (products.length === 0 && page > pageCount) goToPage(pageCount);
+  });
+
+  const linkParams = new URLSearchParams(params);
+  linkParams.delete("page");
+  const keptSearch = linkParams.toString() ? `?${linkParams}` : "";
 
   const filters = (
     <div className="space-y-8">
@@ -101,11 +125,7 @@ export function CatalogLayout({
             label={category.name}
             count={category.count}
             checked={categorySlug === category.slug}
-            to={
-              categorySlug === category.slug
-                ? `/shop${params.toString() ? `?${params}` : ""}`
-                : `/category/${category.slug}${params.toString() ? `?${params}` : ""}`
-            }
+            to={categorySlug === category.slug ? `/shop${keptSearch}` : `/category/${category.slug}${keptSearch}`}
           />
         ))}
       </FilterGroup>
@@ -167,12 +187,64 @@ export function CatalogLayout({
                 }
               />
             ) : (
-              <ProductGrid products={products} />
+              <>
+                <ProductGrid products={products} />
+                <Pagination page={page} pageCount={pageCount} onChange={goToPage} />
+              </>
             )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function pageList(page: number, pageCount: number) {
+  const pages = new Set([1, pageCount, page - 1, page, page + 1]);
+  const sorted = [...pages].filter((value) => value >= 1 && value <= pageCount).sort((a, b) => a - b);
+  const out: (number | "gap")[] = [];
+  sorted.forEach((value, index) => {
+    if (index && value - sorted[index - 1] > 1) out.push("gap");
+    out.push(value);
+  });
+  return out;
+}
+
+function Pagination({ page, pageCount, onChange }: { page: number; pageCount: number; onChange: (page: number) => void }) {
+  if (pageCount <= 1) return null;
+  const step = "inline-flex h-10 items-center gap-1 rounded-full border border-line px-4 text-sm text-ink transition hover:border-ink disabled:pointer-events-none disabled:opacity-40";
+  return (
+    <nav aria-label="Pages" className="mt-12 flex flex-wrap items-center justify-center gap-2">
+      <button type="button" className={step} disabled={page <= 1} onClick={() => onChange(page - 1)}>
+        <ChevronLeft size={16} /> Previous
+      </button>
+      <div className="hidden items-center gap-1 sm:flex">
+        {pageList(page, pageCount).map((item, index) =>
+          item === "gap" ? (
+            <span key={`gap-${index}`} className="px-1 text-muted">…</span>
+          ) : (
+            <button
+              key={item}
+              type="button"
+              aria-current={item === page ? "page" : undefined}
+              onClick={() => onChange(item)}
+              className={cn(
+                "h-10 min-w-10 rounded-full px-3 text-sm transition",
+                item === page ? "bg-ink text-white" : "text-ink hover:bg-canvas-warm",
+              )}
+            >
+              {item}
+            </button>
+          ),
+        )}
+      </div>
+      <span className="px-2 text-sm text-muted sm:hidden">
+        Page {page} of {pageCount}
+      </span>
+      <button type="button" className={step} disabled={page >= pageCount} onClick={() => onChange(page + 1)}>
+        Next <ChevronRight size={16} />
+      </button>
+    </nav>
   );
 }
 
