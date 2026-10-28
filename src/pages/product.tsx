@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn } from "lucide-react";
 import { AddToCartButton } from "@/components/storefront/add-to-cart";
+import { ImageZoom } from "@/components/storefront/image-zoom";
+import { ShareButton } from "@/components/storefront/share-button";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { ProductGrid, type ProductCardData } from "@/components/storefront/product-card";
 import { buttonVariants } from "@/components/ui/button";
@@ -39,6 +41,7 @@ export function ProductPage() {
   const [quantity, setQuantity] = useState(1);
   const [variantId, setVariantId] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [data, setData] = useState<{ product: ProductDetail; related: ProductCardData[] } | null>(null);
 
   useEffect(() => {
@@ -122,17 +125,34 @@ export function ProductPage() {
           <div className="relative overflow-hidden rounded-[1.75rem] bg-canvas-warm">
             <div className="aspect-square">
               {main ? (
-                <img
-                  src={main.url}
-                  alt={main.alt || product.name}
-                  fetchPriority="high"
-                  decoding="async"
-                  className="h-full w-full object-contain p-4 sm:p-8"
-                />
+                <button
+                  type="button"
+                  aria-label="Zoom image"
+                  onClick={() => setZoomOpen(true)}
+                  className="h-full w-full cursor-zoom-in"
+                >
+                  <img
+                    src={main.url}
+                    alt={main.alt || product.name}
+                    fetchPriority="high"
+                    decoding="async"
+                    className="h-full w-full object-contain p-4 sm:p-8"
+                  />
+                </button>
               ) : (
                 <div className="grid h-full place-items-center text-sm text-muted">No image yet</div>
               )}
             </div>
+            {main ? (
+              <button
+                type="button"
+                aria-label="Zoom image"
+                onClick={() => setZoomOpen(true)}
+                className="absolute bottom-3 right-3 grid h-11 w-11 place-items-center rounded-full bg-white/90 text-ink shadow-sm hover:bg-white"
+              >
+                <ZoomIn size={18} />
+              </button>
+            ) : null}
             {images.length > 1 ? (
               <>
                 <button
@@ -154,6 +174,10 @@ export function ProductPage() {
               </>
             ) : null}
           </div>
+
+          {zoomOpen && main ? (
+            <ImageZoom src={main.url} alt={main.alt || product.name} onClose={() => setZoomOpen(false)} />
+          ) : null}
 
           {thumbs.length > 1 ? (
             <div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-6">
@@ -220,6 +244,11 @@ export function ProductPage() {
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <WishlistButton productId={product.id} className="h-12 w-12 border border-ink/15 bg-white" />
+            <ShareButton
+              title={product.name}
+              text={product.shortDescription || `${product.name} at Mojiano`}
+              className="h-12 w-12 border border-ink/15 bg-white"
+            />
             <div className="inline-flex h-12 items-center rounded-full border border-ink/15 bg-white">
               <button
                 type="button"
