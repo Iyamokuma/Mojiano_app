@@ -50,8 +50,8 @@ const optionalPence = z.preprocess(
 export const productSchema = z.object({
   name: z.string().trim().min(2).max(160),
   sku: z.string().trim().min(2).max(40),
-  description: z.string().trim().max(8000).optional(),
-  shortDescription: z.string().trim().max(280).optional(),
+  description: z.string().trim().max(50000).optional(),
+  shortDescription: z.string().trim().max(5000).optional(),
   price: z.coerce.number().int().min(0),
   compareAtPrice: optionalPence,
   salePrice: optionalPence,
@@ -63,7 +63,10 @@ export const productSchema = z.object({
   bestSeller: z.boolean().optional(),
   newArrival: z.boolean().optional(),
   isActive: z.boolean().optional(),
-  weightGrams: optionalPence,
+  weightGrams: z.preprocess(
+    (value) => (value === "" || value == null || Number.isNaN(Number(value)) ? null : Math.round(Number(value))),
+    z.number().int().min(0).nullable().optional(),
+  ),
 });
 
 export const categorySchema = z.object({

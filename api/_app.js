@@ -524,8 +524,8 @@ var optionalPence = z.preprocess(
 var productSchema = z.object({
   name: z.string().trim().min(2).max(160),
   sku: z.string().trim().min(2).max(40),
-  description: z.string().trim().max(8e3).optional(),
-  shortDescription: z.string().trim().max(280).optional(),
+  description: z.string().trim().max(5e4).optional(),
+  shortDescription: z.string().trim().max(5e3).optional(),
   price: z.coerce.number().int().min(0),
   compareAtPrice: optionalPence,
   salePrice: optionalPence,
@@ -537,7 +537,10 @@ var productSchema = z.object({
   bestSeller: z.boolean().optional(),
   newArrival: z.boolean().optional(),
   isActive: z.boolean().optional(),
-  weightGrams: optionalPence
+  weightGrams: z.preprocess(
+    (value) => value === "" || value == null || Number.isNaN(Number(value)) ? null : Math.round(Number(value)),
+    z.number().int().min(0).nullable().optional()
+  )
 });
 var categorySchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -1912,10 +1915,28 @@ app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
     res.status(500).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
   }
 });
+var PRODUCT_FIELD_LABELS = {
+  name: "Name",
+  sku: "SKU",
+  description: "Full description",
+  shortDescription: "Short description",
+  price: "Price",
+  compareAtPrice: "Compare-at price",
+  salePrice: "Sale price",
+  stockQuantity: "Stock",
+  categoryId: "Category",
+  brand: "Brand",
+  weightGrams: "Weight"
+};
+function productIssue(issue) {
+  if (!issue) return "Please check the product details.";
+  const label = PRODUCT_FIELD_LABELS[String(issue.path[0])];
+  return label ? `${label}: ${issue.message}` : issue.message;
+}
 app.post("/api/admin/products", requireAdmin, async (req, res) => {
   const parsed = productSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Please check the product details." });
+    res.status(400).json({ error: productIssue(parsed.error.issues[0]) });
     return;
   }
   const data = parsed.data;
@@ -1978,7 +1999,7 @@ app.patch("/api/admin/products/:id", requireAdmin, async (req, res) => {
   }
   const parsed = productSchema.partial().safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Please check the product details." });
+    res.status(400).json({ error: productIssue(parsed.error.issues[0]) });
     return;
   }
   const data = parsed.data;
