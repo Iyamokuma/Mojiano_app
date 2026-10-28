@@ -542,12 +542,39 @@ var checkoutSchema = z.object({
   notes: z.string().trim().max(500).optional(),
   promoCode: z.string().trim().optional()
 });
+var GRAMS_PER_UNIT = {
+  "": 1,
+  g: 1,
+  gram: 1,
+  grams: 1,
+  kg: 1e3,
+  kgs: 1e3,
+  kilo: 1e3,
+  kilos: 1e3,
+  kilogram: 1e3,
+  kilograms: 1e3,
+  lb: 453.592,
+  lbs: 453.592,
+  pound: 453.592,
+  pounds: 453.592,
+  oz: 28.3495,
+  ounce: 28.3495,
+  ounces: 28.3495
+};
+function parseWeightGrams(input) {
+  const raw = input.trim().toLowerCase().replace(",", ".");
+  if (!raw) return null;
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*([a-z]*)\.?$/);
+  const factor = match ? GRAMS_PER_UNIT[match[2]] : void 0;
+  if (!match || factor === void 0) return input;
+  return Math.round(Number(match[1]) * factor);
+}
 var optionalPence = z.preprocess(
   (value) => value === "" || value === void 0 ? void 0 : value,
   z.number().int().min(0).nullable().optional()
 );
 var productSchema = z.object({
-  name: z.string().trim().min(2).max(160),
+  name: z.string().trim().min(2).max(500),
   sku: z.string().trim().min(2).max(40),
   description: z.string().trim().max(5e4).optional(),
   shortDescription: z.string().trim().max(5e3).optional(),
@@ -563,8 +590,8 @@ var productSchema = z.object({
   newArrival: z.boolean().optional(),
   isActive: z.boolean().optional(),
   weightGrams: z.preprocess(
-    (value) => value === "" || value == null || Number.isNaN(Number(value)) ? null : Math.round(Number(value)),
-    z.number().int().min(0).nullable().optional()
+    (value) => typeof value === "string" ? parseWeightGrams(value) : typeof value === "number" ? Math.round(value) : value,
+    z.number({ message: "Use a weight like 500g, 1.5kg or 2lb." }).int().min(0).nullable().optional()
   )
 });
 var categorySchema = z.object({

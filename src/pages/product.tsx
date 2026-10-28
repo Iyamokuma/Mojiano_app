@@ -282,7 +282,9 @@ export function ProductPage() {
             </a>
           ) : null}
           {product.weightGrams ? (
-            <p className="mt-6 text-sm text-muted">Weight {product.weightGrams}g</p>
+            <p className="mt-6 text-sm text-muted">
+              Weight {product.weightGrams >= 1000 ? `${Number((product.weightGrams / 1000).toFixed(2))}kg` : `${product.weightGrams}g`}
+            </p>
           ) : null}
         </div>
       </div>

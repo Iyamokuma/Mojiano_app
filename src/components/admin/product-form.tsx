@@ -131,7 +131,7 @@ export function AdminProductForm() {
           newArrival: next.newArrival,
           bestSeller: next.bestSeller,
           isActive: next.isActive,
-          weightGrams: next.weightGrams != null ? String(next.weightGrams) : "",
+          weightGrams: next.weightGrams != null ? `${next.weightGrams}g` : "",
         });
         const ordered = [...next.images].sort((a, b) => a.sortOrder - b.sortOrder);
         setImages(ordered);
@@ -294,7 +294,7 @@ export function AdminProductForm() {
       newArrival: form.newArrival,
       bestSeller: form.bestSeller,
       isActive: asDraft ? false : form.isActive,
-      weightGrams: form.weightGrams.trim() ? Number(form.weightGrams) : null,
+      weightGrams: form.weightGrams.trim() || null,
       variants: variants.filter((variant) => variant.name.trim()),
     };
     try {
@@ -598,15 +598,15 @@ export function AdminProductForm() {
               <h2 className="text-[15px] font-semibold">Shipping</h2>
               <p className="text-sm text-muted">Checkout still uses Standard, Express or Collection. Weight is optional and helps with quotes.</p>
               <div>
-                <Label>Weight (grams)</Label>
+                <Label>Weight</Label>
                 <Input
                   name="weightGrams"
-                  type="number"
-                  min="0"
-                  step="1"
+                  type="text"
+                  placeholder="e.g. 500g, 1.5kg or 2lb"
                   value={form.weightGrams}
                   onChange={(event) => update("weightGrams", event.target.value)}
                 />
+                <p className="mt-1 text-xs text-muted">Optional. A plain number is read as grams.</p>
               </div>
             </div>
           ) : null}

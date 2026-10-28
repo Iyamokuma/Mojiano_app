@@ -42,13 +42,43 @@ export const checkoutSchema = z.object({
   promoCode: z.string().trim().optional(),
 });
 
+const GRAMS_PER_UNIT: Record<string, number> = {
+  "": 1,
+  g: 1,
+  gram: 1,
+  grams: 1,
+  kg: 1000,
+  kgs: 1000,
+  kilo: 1000,
+  kilos: 1000,
+  kilogram: 1000,
+  kilograms: 1000,
+  lb: 453.592,
+  lbs: 453.592,
+  pound: 453.592,
+  pounds: 453.592,
+  oz: 28.3495,
+  ounce: 28.3495,
+  ounces: 28.3495,
+};
+
+/** "1.5kg", "500 g", "2 lbs", "750" → grams. Empty → null; anything unreadable is passed back for zod to reject. */
+export function parseWeightGrams(input: string): number | null | string {
+  const raw = input.trim().toLowerCase().replace(",", ".");
+  if (!raw) return null;
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*([a-z]*)\.?$/);
+  const factor = match ? GRAMS_PER_UNIT[match[2]] : undefined;
+  if (!match || factor === undefined) return input;
+  return Math.round(Number(match[1]) * factor);
+}
+
 const optionalPence = z.preprocess(
   (value) => (value === "" || value === undefined ? undefined : value),
   z.number().int().min(0).nullable().optional(),
 );
 
 export const productSchema = z.object({
-  name: z.string().trim().min(2).max(160),
+  name: z.string().trim().min(2).max(500),
   sku: z.string().trim().min(2).max(40),
   description: z.string().trim().max(50000).optional(),
   shortDescription: z.string().trim().max(5000).optional(),
@@ -64,8 +94,9 @@ export const productSchema = z.object({
   newArrival: z.boolean().optional(),
   isActive: z.boolean().optional(),
   weightGrams: z.preprocess(
-    (value) => (value === "" || value == null || Number.isNaN(Number(value)) ? null : Math.round(Number(value))),
-    z.number().int().min(0).nullable().optional(),
+    (value) =>
+      typeof value === "string" ? parseWeightGrams(value) : typeof value === "number" ? Math.round(value) : value,
+    z.number({ message: "Use a weight like 500g, 1.5kg or 2lb." }).int().min(0).nullable().optional(),
   ),
 });
 
