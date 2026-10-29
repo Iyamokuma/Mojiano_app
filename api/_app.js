@@ -639,6 +639,47 @@ var AmazonImportError = class extends Error {
   }
   status;
 };
+var CATEGORY_RULES = [
+  [/christmas|halloween|easter|seasonal|party supplies|festive/i, "christmas-halloween"],
+  [/jewellery|jewelry|watches/i, "jewellery-watches"],
+  [/furniture|sofa|mattress/i, "furniture-sofas"],
+  [/large appliances|washing machine|dishwasher|fridge|freezer|tumble dryer|cooker/i, "white-goods"],
+  [/television|home cinema|\btv\b|audio|headphones|speakers|hi-fi|radio/i, "audio-tv"],
+  [/toys|games|baby|nursery/i, "toys-nursery"],
+  [/bedding|bed linen|towels|curtains|cushions|blankets|rugs|textiles/i, "household-textiles"],
+  [/kitchen|cookware|bakeware|tableware|dining/i, "kitchenware"],
+  [/garden|outdoor living|barbecue|bbq|pool/i, "summer-stock"],
+  [/sports|fitness|camping|cycling|outdoors/i, "sports-leisure"],
+  [/diy|tools|automotive|car |motorbike|hardware/i, "diy-auto"],
+  [/fashion|clothing|shoes|handbags|luggage|beauty|cosmetics|fragrance|personal care|hair/i, "fashion-beauty"],
+  [/electronics|computers|phones|small appliances|lighting|camera|electrical/i, "electrical"],
+  [/home|household|cleaning|pet supplies|storage|bathroom|grocery|health/i, "mixed-households"]
+];
+function matchCategory(breadcrumb, title) {
+  for (const [pattern, slug] of CATEGORY_RULES) if (pattern.test(breadcrumb)) return slug;
+  for (const [pattern, slug] of CATEGORY_RULES) if (pattern.test(title)) return slug;
+  return "miscellaneous";
+}
+function toPence(price) {
+  if (!price || typeof price.value !== "number" || price.value <= 0) return null;
+  if (price.currency && price.currency !== "GBP") return null;
+  return Math.round(price.value * 100);
+}
+function findWeight(product) {
+  const specs = product.specifications ?? [];
+  const candidates = [
+    product.weight,
+    ...specs.filter((spec) => /^(item|product) weight$/i.test(spec.name ?? "")).map((spec) => spec.value),
+    ...specs.filter((spec) => /weight/i.test(spec.name ?? "")).map((spec) => spec.value),
+    product.shipping_weight
+  ];
+  for (const value of candidates) {
+    if (!value) continue;
+    const grams = parseWeightGrams(value.split(/[;,]/)[0]);
+    if (typeof grams === "number" && grams > 0) return grams;
+  }
+  return null;
+}
 var ASIN = /^[A-Z0-9]{10}$/;
 function normaliseAsin(input) {
   const raw = String(input ?? "").trim().toUpperCase();
@@ -662,28 +703,31 @@ function toAmazonProduct(asin, product) {
     (url2) => Boolean(url2 && /^https?:\/\//.test(url2))
   );
   const bullets = (product.feature_bullets ?? []).map((line) => line.trim()).filter(Boolean);
+  const amazonCategory = (product.categories ?? []).map((category) => category.name?.trim()).filter(Boolean).join(" > ");
+  const buybox = product.buybox_winner;
   return {
     asin: product.asin ?? asin,
     name,
     brand: product.brand?.trim() || null,
     description: bullets.length ? bullets.join("\n\n") : product.description?.trim() ?? "",
     images: uniqueImages(images).slice(0, 12),
+    price: buybox?.condition?.is_new === false ? null : toPence(buybox?.price),
+    weightGrams: findWeight(product),
+    amazonCategory,
+    categorySlug: matchCategory(amazonCategory, name),
     sourceUrl: product.link ?? `https://www.amazon.co.uk/dp/${asin}`
   };
 }
-async function fetchAmazonProduct(asin) {
-  const key = process.env.RAINFOREST_API_KEY;
-  if (!key) {
-    throw new AmazonImportError("Amazon import isn't set up yet. Add RAINFOREST_API_KEY in Vercel settings.", 503);
-  }
+async function rainforest(type, asin, key) {
   const url2 = new URL("https://api.rainforestapi.com/request");
   url2.searchParams.set("api_key", key);
-  url2.searchParams.set("type", "product");
+  url2.searchParams.set("type", type);
   url2.searchParams.set("amazon_domain", "amazon.co.uk");
   url2.searchParams.set("asin", asin);
+  if (type === "offers") url2.searchParams.set("offers_condition_new", "true");
   let res;
   try {
-    res = await fetch(url2, { signal: AbortSignal.timeout(25e3) });
+    res = await fetch(url2, { signal: AbortSignal.timeout(type === "product" ? 18e3 : 1e4) });
   } catch {
     throw new AmazonImportError("The Amazon lookup timed out. Try again in a moment.", 504);
   }
@@ -694,8 +738,27 @@ async function fetchAmazonProduct(asin) {
   if (!res.ok || data.request_info?.success === false) {
     throw new AmazonImportError(reason ? `Amazon lookup failed: ${reason}` : `Amazon lookup failed (${res.status}).`, 502);
   }
+  return data;
+}
+async function lowestNewOffer(asin, key) {
+  try {
+    const data = await rainforest("offers", asin, key);
+    const prices = (data.offers ?? []).filter((offer) => offer.condition?.is_new !== false).map((offer) => toPence(offer.price)).filter((price) => price !== null);
+    return prices.length ? Math.min(...prices) : null;
+  } catch {
+    return null;
+  }
+}
+async function fetchAmazonProduct(asin) {
+  const key = process.env.RAINFOREST_API_KEY;
+  if (!key) {
+    throw new AmazonImportError("Amazon import isn't set up yet. Add RAINFOREST_API_KEY in Vercel settings.", 503);
+  }
+  const data = await rainforest("product", asin, key);
   if (!data.product) throw new AmazonImportError("No Amazon UK product has that code.", 404);
-  return toAmazonProduct(asin, data.product);
+  const product = toAmazonProduct(asin, data.product);
+  if (product.price === null) product.price = await lowestNewOffer(asin, key);
+  return product;
 }
 
 // server/product-image-storage.ts

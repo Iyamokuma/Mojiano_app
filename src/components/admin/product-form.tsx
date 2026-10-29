@@ -236,20 +236,40 @@ export function AdminProductForm() {
     setImported(null);
     setError(null);
     try {
-      const found = await api<{ asin: string; name: string; brand: string | null; description: string; images: string[] }>(
-        `/api/admin/import/amazon?code=${encodeURIComponent(code)}`,
-      );
+      const found = await api<{
+        asin: string;
+        name: string;
+        brand: string | null;
+        description: string;
+        images: string[];
+        price: number | null;
+        weightGrams: number | null;
+        categorySlug: string;
+      }>(`/api/admin/import/amazon?code=${encodeURIComponent(code)}`);
+      const category =
+        categories.find((item) => item.slug === found.categorySlug) ?? categories.find((item) => item.slug === "miscellaneous");
       setForm((current) => ({
         ...current,
         name: found.name,
         sku: current.sku.trim() ? current.sku : found.asin,
         brand: found.brand ?? current.brand,
         description: current.description.trim() ? current.description : found.description,
+        categoryId: category?.id ?? current.categoryId,
+        price: found.price != null ? pounds(found.price) : current.price,
+        weightGrams: found.weightGrams != null ? `${found.weightGrams}g` : current.weightGrams,
+        // A new listing saved with 0 stock would show as sold out.
+        stockQuantity: Number(current.stockQuantity || 0) > 0 ? current.stockQuantity : "1",
+        isActive: true,
       }));
       const known = new Set(images.map((image) => image.url));
       const fresh = found.images.filter((url) => !known.has(url));
       if (fresh.length) await addUrls(fresh.join(" "), found.name);
-      setImported(`Imported ${found.asin} with ${found.images.length} photo${found.images.length === 1 ? "" : "s"}. Set a price and category, then save.`);
+      const missing = [found.price == null && "price", found.weightGrams == null && "weight"].filter(Boolean);
+      setImported(
+        `Imported ${found.asin}: ${found.images.length} photo${found.images.length === 1 ? "" : "s"}` +
+          `${category ? `, ${category.name}` : ""}${found.price != null ? `, £${pounds(found.price)}` : ""}.` +
+          (missing.length ? ` Amazon didn't list a ${missing.join(" or ")}${found.price == null ? " — add a price before saving" : ""}.` : " Ready to save."),
+      );
       setAmazonCode("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not import from Amazon.");
@@ -348,7 +368,8 @@ export function AdminProductForm() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (lastStep) {
+    // After an Amazon import everything is filled in, so save straight away.
+    if (lastStep || imported) {
       void save(false);
       return;
     }
@@ -677,7 +698,7 @@ export function AdminProductForm() {
             Cancel
           </Link>
           <Button type="submit" variant="primary" disabled={pending || uploading}>
-            {pending ? "Saving…" : lastStep ? (editing ? "Save product" : "Add to shop") : "Next"}
+            {pending ? "Saving…" : lastStep || imported ? (editing ? "Save product" : "Add to shop") : "Next"}
           </Button>
         </div>
       </div>
