@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { ImagePlus, Link2, Star } from "lucide-react";
+import { ImagePlus, Star } from "lucide-react";
 import { api, peekApi, uploadImage } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,6 @@ export function AdminProductForm() {
   const [uploading, setUploading] = useState(false);
   const [catsReady, setCatsReady] = useState(() => peekApi("/api/admin/categories") !== undefined);
   const [dragging, setDragging] = useState(false);
-  const [imageUrl, setImageUrl] = useState("");
 
   useEffect(() => {
     void api<Category[]>("/api/admin/categories")
@@ -184,43 +183,6 @@ export function AdminProductForm() {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not upload images.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function addUrls(raw: string) {
-    const urls = raw
-      .split(/[\s,]+/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (!urls.length) return;
-    const invalid = urls.filter((value) => !/^https?:\/\/\S+$/i.test(value));
-    if (invalid.length) {
-      setError(`Not an image address: ${invalid[0]}`);
-      return;
-    }
-    setUploading(true);
-    setError(null);
-    try {
-      const added: DraftImage[] = [];
-      for (const url of urls) {
-        const next = { url, alt: form.name };
-        if (editing && id) {
-          added.push(
-            await api<DraftImage>(`/api/admin/products/${id}/images`, { method: "POST", body: JSON.stringify(next) }),
-          );
-        } else {
-          added.push(next);
-        }
-      }
-      setImages((current) => {
-        if (current.length === 0) setPrimaryIndex(0);
-        return [...current, ...added];
-      });
-      setImageUrl("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add that image.");
     } finally {
       setUploading(false);
     }
@@ -422,7 +384,7 @@ export function AdminProductForm() {
           {step === "media" ? (
             <div>
               <h2 className="text-[15px] font-semibold">Upload media</h2>
-              <p className="mt-1 text-sm text-muted">Upload photos (up to 20MB each) or paste image addresses. Click one to make it the main image on the shop.</p>
+              <p className="mt-1 text-sm text-muted">Drop photos here or browse. Each image can be up to 20MB. Click one to make it the main image on the shop.</p>
               <label
                 onDragOver={(event) => {
                   event.preventDefault();
@@ -448,38 +410,6 @@ export function AdminProductForm() {
                   }}
                 />
               </label>
-              <div className="mt-4">
-                <Label>Or add by image URL</Label>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Link2 size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                    <Input
-                      type="text"
-                      inputMode="url"
-                      placeholder="https://example.com/photo.jpg — paste several separated by spaces or new lines"
-                      value={imageUrl}
-                      className="pl-9"
-                      onChange={(event) => setImageUrl(event.target.value)}
-                      onPaste={(event) => {
-                        const pasted = event.clipboardData.getData("text");
-                        if (/\s/.test(pasted.trim())) {
-                          event.preventDefault();
-                          void addUrls(pasted);
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void addUrls(imageUrl);
-                        }
-                      }}
-                    />
-                  </div>
-                  <Button type="button" variant="outline" disabled={uploading || !imageUrl.trim()} onClick={() => void addUrls(imageUrl)}>
-                    Add image
-                  </Button>
-                </div>
-              </div>
               {images.length ? (
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {images.map((image, index) => {
