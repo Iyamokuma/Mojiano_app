@@ -631,6 +631,73 @@ function safeNextPath(value, fallback = "/account") {
   return value;
 }
 
+// server/amazon-import.ts
+var AmazonImportError = class extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+  status;
+};
+var ASIN = /^[A-Z0-9]{10}$/;
+function normaliseAsin(input) {
+  const raw = String(input ?? "").trim().toUpperCase();
+  const fromUrl = raw.match(/\/(?:DP|GP\/PRODUCT|PRODUCT)\/([A-Z0-9]{10})/);
+  const asin = fromUrl?.[1] ?? raw;
+  return ASIN.test(asin) ? asin : null;
+}
+function uniqueImages(urls) {
+  const seen = /* @__PURE__ */ new Set();
+  return urls.filter((url2) => {
+    const id3 = url2.match(/\/images\/I\/([^._/]+)/)?.[1] ?? url2;
+    if (seen.has(id3)) return false;
+    seen.add(id3);
+    return true;
+  });
+}
+function toAmazonProduct(asin, product) {
+  const name = product.title?.trim() ?? "";
+  if (!name) throw new AmazonImportError("No Amazon UK product has that code.", 404);
+  const images = [product.main_image?.link, ...(product.images ?? []).map((image) => image.link)].filter(
+    (url2) => Boolean(url2 && /^https?:\/\//.test(url2))
+  );
+  const bullets = (product.feature_bullets ?? []).map((line) => line.trim()).filter(Boolean);
+  return {
+    asin: product.asin ?? asin,
+    name,
+    brand: product.brand?.trim() || null,
+    description: bullets.length ? bullets.join("\n\n") : product.description?.trim() ?? "",
+    images: uniqueImages(images).slice(0, 12),
+    sourceUrl: product.link ?? `https://www.amazon.co.uk/dp/${asin}`
+  };
+}
+async function fetchAmazonProduct(asin) {
+  const key = process.env.RAINFOREST_API_KEY;
+  if (!key) {
+    throw new AmazonImportError("Amazon import isn't set up yet. Add RAINFOREST_API_KEY in Vercel settings.", 503);
+  }
+  const url2 = new URL("https://api.rainforestapi.com/request");
+  url2.searchParams.set("api_key", key);
+  url2.searchParams.set("type", "product");
+  url2.searchParams.set("amazon_domain", "amazon.co.uk");
+  url2.searchParams.set("asin", asin);
+  let res;
+  try {
+    res = await fetch(url2, { signal: AbortSignal.timeout(25e3) });
+  } catch {
+    throw new AmazonImportError("The Amazon lookup timed out. Try again in a moment.", 504);
+  }
+  const data = await res.json().catch(() => ({}));
+  const reason = data.request_info?.message;
+  if (res.status === 401) throw new AmazonImportError("The Rainforest API key was rejected. Check RAINFOREST_API_KEY.", 502);
+  if (res.status === 402) throw new AmazonImportError("The Rainforest account is out of lookup credits.", 502);
+  if (!res.ok || data.request_info?.success === false) {
+    throw new AmazonImportError(reason ? `Amazon lookup failed: ${reason}` : `Amazon lookup failed (${res.status}).`, 502);
+  }
+  if (!data.product) throw new AmazonImportError("No Amazon UK product has that code.", 404);
+  return toAmazonProduct(asin, data.product);
+}
+
 // server/product-image-storage.ts
 import path from "node:path";
 import { customAlphabet } from "nanoid";
@@ -1973,6 +2040,19 @@ app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
     res.json({ url: mediaPath(saved.id), alt: "" });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
+  }
+});
+app.get("/api/admin/import/amazon", requireAdmin, async (req, res) => {
+  const asin = normaliseAsin(String(req.query.code ?? ""));
+  if (!asin) {
+    res.status(400).json({ error: "Enter a 10-character Amazon code, e.g. B0DD35ZJSR." });
+    return;
+  }
+  try {
+    res.json(await fetchAmazonProduct(asin));
+  } catch (error) {
+    const status = error instanceof AmazonImportError ? error.status : 502;
+    res.status(status).json({ error: error instanceof Error ? error.message : "Could not import from Amazon." });
   }
 });
 var PRODUCT_FIELD_LABELS = {

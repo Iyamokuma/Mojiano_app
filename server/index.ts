@@ -31,6 +31,7 @@ import {
 import { checkoutSchema, loginSchema, registerSchema, productSchema } from "../src/lib/validations";
 import { rateLimit } from "../src/lib/rate-limit";
 import { safeNextPath, slugify } from "../src/lib/utils";
+import { AmazonImportError, fetchAmazonProduct, normaliseAsin } from "./amazon-import";
 import { createProductUploadTarget, isProductImageUrl, MAX_PRODUCT_IMAGE_BYTES, mediaPath, supabaseStorageReady } from "./product-image-storage";
 import { productImageMemoryUpload, UPLOAD_DIR } from "./upload";
 import { sendPasswordResetEmail, sendVerifyEmail } from "./email";
@@ -1129,6 +1130,20 @@ app.post("/api/admin/uploads", requireAdmin, (req, res, next) => {
     res.json({ url: mediaPath(saved.id), alt: "" });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Could not upload that image." });
+  }
+});
+
+app.get("/api/admin/import/amazon", requireAdmin, async (req, res) => {
+  const asin = normaliseAsin(String(req.query.code ?? ""));
+  if (!asin) {
+    res.status(400).json({ error: "Enter a 10-character Amazon code, e.g. B0DD35ZJSR." });
+    return;
+  }
+  try {
+    res.json(await fetchAmazonProduct(asin));
+  } catch (error) {
+    const status = error instanceof AmazonImportError ? error.status : 502;
+    res.status(status).json({ error: error instanceof Error ? error.message : "Could not import from Amazon." });
   }
 });
 

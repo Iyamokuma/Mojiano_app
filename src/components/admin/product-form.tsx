@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { ImagePlus, Link2, Star } from "lucide-react";
+import { DownloadCloud, ImagePlus, Link2, Star } from "lucide-react";
 import { api, peekApi, uploadImage } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
 import { Button } from "@/components/ui/button";
@@ -90,6 +90,9 @@ export function AdminProductForm() {
   const [catsReady, setCatsReady] = useState(() => peekApi("/api/admin/categories") !== undefined);
   const [dragging, setDragging] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
+  const [amazonCode, setAmazonCode] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState<string | null>(null);
 
   useEffect(() => {
     void api<Category[]>("/api/admin/categories")
@@ -189,7 +192,7 @@ export function AdminProductForm() {
     }
   }
 
-  async function addUrls(raw: string) {
+  async function addUrls(raw: string, alt = form.name) {
     const urls = raw
       .split(/[\s,]+/)
       .map((value) => value.trim())
@@ -205,7 +208,7 @@ export function AdminProductForm() {
     try {
       const added: DraftImage[] = [];
       for (const url of urls) {
-        const next = { url, alt: form.name };
+        const next = { url, alt };
         if (editing && id) {
           added.push(
             await api<DraftImage>(`/api/admin/products/${id}/images`, { method: "POST", body: JSON.stringify(next) }),
@@ -223,6 +226,35 @@ export function AdminProductForm() {
       setError(err instanceof Error ? err.message : "Could not add that image.");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function importFromAmazon() {
+    const code = amazonCode.trim();
+    if (!code) return;
+    setImporting(true);
+    setImported(null);
+    setError(null);
+    try {
+      const found = await api<{ asin: string; name: string; brand: string | null; description: string; images: string[] }>(
+        `/api/admin/import/amazon?code=${encodeURIComponent(code)}`,
+      );
+      setForm((current) => ({
+        ...current,
+        name: found.name,
+        sku: current.sku.trim() ? current.sku : found.asin,
+        brand: found.brand ?? current.brand,
+        description: current.description.trim() ? current.description : found.description,
+      }));
+      const known = new Set(images.map((image) => image.url));
+      const fresh = found.images.filter((url) => !known.has(url));
+      if (fresh.length) await addUrls(fresh.join(" "), found.name);
+      setImported(`Imported ${found.asin} with ${found.images.length} photo${found.images.length === 1 ? "" : "s"}. Set a price and category, then save.`);
+      setAmazonCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import from Amazon.");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -367,6 +399,26 @@ export function AdminProductForm() {
           {step === "info" ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <h2 className="text-[15px] font-semibold sm:col-span-2">Product information</h2>
+              <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row">
+                <Input
+                  aria-label="Amazon code"
+                  placeholder="Amazon code, e.g. B0DD35ZJSR"
+                  value={amazonCode}
+                  className="sm:flex-1"
+                  onChange={(event) => setAmazonCode(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void importFromAmazon();
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" disabled={importing || !amazonCode.trim()} onClick={() => void importFromAmazon()}>
+                  <DownloadCloud size={16} className="mr-2" />
+                  {importing ? "Importing…" : "Import"}
+                </Button>
+              </div>
+              {imported ? <p className="text-sm text-success sm:col-span-2">{imported}</p> : null}
               <div className="sm:col-span-2">
                 <Label>Name</Label>
                 <Input name="name" required value={form.name} onChange={(event) => update("name", event.target.value)} />
