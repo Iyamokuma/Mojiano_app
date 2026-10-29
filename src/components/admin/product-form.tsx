@@ -448,36 +448,36 @@ export function AdminProductForm() {
                   }}
                 />
               </label>
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Link2 size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                    <Input
-                      type="text"
-                      inputMode="url"
-                      placeholder="https://"
-                      aria-label="Image URL"
-                      value={imageUrl}
-                      className="pl-9"
-                      onChange={(event) => setImageUrl(event.target.value)}
-                      onPaste={(event) => {
-                        const pasted = event.clipboardData.getData("text");
-                        if (/\s/.test(pasted.trim())) {
-                          event.preventDefault();
-                          void addUrls(pasted);
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void addUrls(imageUrl);
-                        }
-                      }}
-                    />
-                  </div>
-                  <Button type="button" variant="outline" disabled={uploading || !imageUrl.trim()} onClick={() => void addUrls(imageUrl)}>
-                    Add
-                  </Button>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <Link2 size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="text"
+                    inputMode="url"
+                    placeholder="https://"
+                    aria-label="Image URL"
+                    value={imageUrl}
+                    className="pl-9"
+                    onChange={(event) => setImageUrl(event.target.value)}
+                    onPaste={(event) => {
+                      const pasted = event.clipboardData.getData("text");
+                      if (/\s/.test(pasted.trim())) {
+                        event.preventDefault();
+                        void addUrls(pasted);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void addUrls(imageUrl);
+                      }
+                    }}
+                  />
                 </div>
+                <Button type="button" variant="outline" disabled={uploading || !imageUrl.trim()} onClick={() => void addUrls(imageUrl)}>
+                  Add
+                </Button>
+              </div>
               {images.length ? (
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {images.map((image, index) => {
