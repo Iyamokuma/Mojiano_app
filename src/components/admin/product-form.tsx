@@ -599,7 +599,7 @@ export function AdminProductForm() {
                 <Input name="price" type="number" min="0" step="0.01" required value={form.price} onChange={(event) => update("price", event.target.value)} />
               </div>
               <div>
-                <Label>Compare-at (£)</Label>
+                <Label>Old price (£), shown crossed out</Label>
                 <Input name="compareAtPrice" type="number" min="0" step="0.01" value={form.compareAtPrice} onChange={(event) => update("compareAtPrice", event.target.value)} />
               </div>
               <div>

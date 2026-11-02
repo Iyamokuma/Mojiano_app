@@ -1153,7 +1153,7 @@ const PRODUCT_FIELD_LABELS: Record<string, string> = {
   description: "Full description",
   shortDescription: "Short description",
   price: "Price",
-  compareAtPrice: "Compare-at price",
+  compareAtPrice: "Old price",
   salePrice: "Sale price",
   stockQuantity: "Stock",
   categoryId: "Category",

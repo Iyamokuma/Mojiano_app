@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, dropApiCache, peekApi } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
-import { formatGBP } from "@/lib/money";
+import { effectivePrice, formatGBP, wasPrice } from "@/lib/money";
 import { Eyebrow, Panel, StatusPill } from "@/components/admin/ui";
 import { Input } from "@/components/ui/field";
 
@@ -13,6 +13,8 @@ type Product = {
   slug: string;
   sku: string;
   price: number;
+  compareAtPrice: number | null;
+  salePrice: number | null;
   stockQuantity: number;
   featured: boolean;
   clearance: boolean;
@@ -103,6 +105,24 @@ export function AdminCatalogue() {
         setError(err instanceof Error ? err.message : "Could not delete those products.");
         void loadProducts();
       });
+  }
+
+  /** Saves the struck-through "old price" from the catalogue row; blank clears it. */
+  function saveOldPrice(product: Product, input: HTMLInputElement) {
+    const raw = input.value.replace(/[£,\s]/g, "");
+    const pence = raw ? Math.round(Number(raw) * 100) : null;
+    if (pence !== null && (!Number.isFinite(pence) || pence < 0)) {
+      setError(`Old price for ${product.sku} isn't a number.`);
+      return;
+    }
+    const now = effectivePrice(product);
+    if (pence !== null && pence <= now) {
+      setError(`Old price for ${product.sku} must be above ${formatGBP(now)} to show as a discount.`);
+      return;
+    }
+    if (pence === (product.compareAtPrice || null)) return;
+    setError(null);
+    void patchProduct(product.id, { compareAtPrice: pence }).catch((err: Error) => setError(err.message));
   }
 
   function toggleSelected(id: string) {
@@ -217,7 +237,7 @@ export function AdminCatalogue() {
                       {!product.isActive ? <StatusPill value="Hidden" tone="neutral" /> : null}
                     </div>
                     <p className="mt-1 text-xs text-muted">
-                      {product.sku} · {product.category.name} · {formatGBP(product.price)}
+                      {product.sku} · {product.category.name} · <PriceShown product={product} />
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Flag active={product.newArrival} label="New" onClick={() => void patchProduct(product.id, { newArrival: !product.newArrival })} />
@@ -226,7 +246,21 @@ export function AdminCatalogue() {
                       <Flag active={product.bestSeller} label="Best" onClick={() => void patchProduct(product.id, { bestSeller: !product.bestSeller })} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 sm:flex-col sm:items-end">
+                  <div className="flex flex-wrap items-center gap-3 sm:flex-col sm:items-end">
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="text-muted">Old price £</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="—"
+                        defaultValue={product.compareAtPrice ? (product.compareAtPrice / 100).toFixed(2) : ""}
+                        className="h-10 w-24 rounded-xl border border-line bg-white px-2 text-sm"
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                        }}
+                        onBlur={(event) => saveOldPrice(product, event.currentTarget)}
+                      />
+                    </label>
                     <label className="flex items-center gap-2 text-sm">
                       <span className="text-muted">Stock</span>
                       <input
@@ -290,6 +324,18 @@ export function AdminCatalogue() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The price as the shop shows it: old price struck through, then what the customer pays. */
+function PriceShown({ product }: { product: Product }) {
+  const now = effectivePrice(product);
+  const was = wasPrice(product, now);
+  return (
+    <>
+      {was ? <span className="mr-1 line-through">{formatGBP(was)}</span> : null}
+      <span className={was ? "font-medium text-pink-deep" : undefined}>{formatGBP(now)}</span>
+    </>
   );
 }
 
