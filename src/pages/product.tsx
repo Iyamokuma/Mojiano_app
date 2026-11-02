@@ -12,7 +12,7 @@ import { MojianoLoader } from "@/components/ui/mojiano-loader";
 import { useShop } from "@/context/shop";
 import { api } from "@/lib/api";
 import { resolveProductImageUrl } from "@/lib/media";
-import { discountPercent, effectivePrice, formatGBP } from "@/lib/money";
+import { discountPercent, effectivePrice, formatGBP, wasPrice } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 type ProductImage = { id?: string; url: string; alt: string };
@@ -63,12 +63,11 @@ export function ProductPage() {
   const product = data?.product;
   const variant = product?.variants.find((item) => item.id === variantId);
   const stock = variant ? variant.stock : (product?.stockQuantity ?? 0);
-  const price = product
-    ? variant?.price && variant.price > 0
-      ? variant.price
-      : effectivePrice(product)
-    : 0;
-  const save = product ? discountPercent(price, product.compareAtPrice) : null;
+  const variantPrice = variant?.price && variant.price > 0 ? variant.price : null;
+  const price = product ? (variantPrice ?? effectivePrice(product)) : 0;
+  // A variant's own price is its regular price, so only the compare-at price can sit above it.
+  const was = product ? wasPrice({ price: variantPrice ?? product.price, compareAtPrice: product.compareAtPrice }, price) : null;
+  const save = discountPercent(price, was);
   const images = (product?.images ?? [])
     .map((image) => ({ ...image, url: resolveProductImageUrl(image.url) }))
     .filter((image) => image.url);
@@ -202,11 +201,17 @@ export function ProductPage() {
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted">{product.category.name}</p>
           {product.brand ? <p className="mt-2 text-sm text-muted">{product.brand}</p> : null}
           <h1 className="mt-2 font-display text-2xl leading-snug sm:text-3xl md:text-5xl md:leading-tight">{product.name}</h1>
-          <div className="mt-5 flex flex-wrap items-end gap-3">
-            <p className="text-2xl font-semibold">{formatGBP(price)}</p>
-            {product.compareAtPrice && product.compareAtPrice > price ? (
-              <p className="text-muted line-through">{formatGBP(product.compareAtPrice)}</p>
+          <div className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {was ? (
+              <p className="text-lg text-muted line-through decoration-1">
+                <span className="sr-only">Was </span>
+                {formatGBP(was)}
+              </p>
             ) : null}
+            <p className={cn("text-2xl font-semibold", was && "text-pink-deep")}>
+              {was ? <span className="sr-only">Now </span> : null}
+              {formatGBP(price)}
+            </p>
             {save ? <p className="text-sm text-pink-deep">Save {save}%</p> : null}
           </div>
           <p className="mt-3 text-sm text-muted">

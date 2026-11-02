@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { compactImageUrl } from "@/lib/media";
-import { formatGBP, discountPercent, effectivePrice } from "@/lib/money";
+import { formatGBP, discountPercent, effectivePrice, wasPrice } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { AddToCartButton } from "@/components/storefront/add-to-cart";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
@@ -26,7 +26,8 @@ export type ProductCardData = {
 export function ProductCard({ product }: { product: ProductCardData }) {
   const [quickView, setQuickView] = useState(false);
   const price = effectivePrice(product);
-  const save = discountPercent(price, product.compareAtPrice);
+  const was = wasPrice(product, price);
+  const save = discountPercent(price, was);
   const image = product.images[0];
   const imageUrl = image ? compactImageUrl(image.url) : "";
   const isNew = Boolean(product.newArrival);
@@ -64,10 +65,18 @@ export function ProductCard({ product }: { product: ProductCardData }) {
           {product.name}
         </Link>
       </h3>
-      <p className="mt-2 text-[15px] text-ink">{formatGBP(price)}</p>
-      {product.compareAtPrice && product.compareAtPrice > price ? (
-        <p className="text-sm text-muted line-through">{formatGBP(product.compareAtPrice)}</p>
-      ) : null}
+      <p className="mt-2 flex flex-wrap items-baseline justify-center gap-x-2">
+        {was ? (
+          <span className="text-sm text-muted line-through">
+            <span className="sr-only">Was </span>
+            {formatGBP(was)}
+          </span>
+        ) : null}
+        <span className={cn("text-[15px]", was ? "font-medium text-pink-deep" : "text-ink")}>
+          {was ? <span className="sr-only">Now </span> : null}
+          {formatGBP(price)}
+        </span>
+      </p>
       <button
         type="button"
         onClick={() => setQuickView(true)}
@@ -76,7 +85,7 @@ export function ProductCard({ product }: { product: ProductCardData }) {
         Quick view
       </button>
       {quickView ? (
-        <QuickView product={product} price={price} save={save} onClose={() => setQuickView(false)} />
+        <QuickView product={product} price={price} was={was} save={save} onClose={() => setQuickView(false)} />
       ) : null}
     </article>
   );
@@ -85,11 +94,13 @@ export function ProductCard({ product }: { product: ProductCardData }) {
 function QuickView({
   product,
   price,
+  was,
   save,
   onClose,
 }: {
   product: ProductCardData;
   price: number;
+  was: number | null;
   save: number | null;
   onClose: () => void;
 }) {
@@ -126,7 +137,18 @@ function QuickView({
           <h2 id={titleId} className="mt-2 font-display text-3xl leading-tight">
             {product.name}
           </h2>
-          <p className="mt-3 text-xl font-medium">{formatGBP(price)}</p>
+          <p className="mt-3 flex flex-wrap items-baseline gap-x-3">
+            {was ? (
+              <span className="text-base text-muted line-through">
+                <span className="sr-only">Was </span>
+                {formatGBP(was)}
+              </span>
+            ) : null}
+            <span className={cn("text-xl font-medium", was && "text-pink-deep")}>
+              {was ? <span className="sr-only">Now </span> : null}
+              {formatGBP(price)}
+            </span>
+          </p>
           {save ? <p className="mt-1 text-sm text-pink-deep">Save {save}%</p> : null}
           <p className="mt-4 text-sm leading-relaxed text-muted">{product.shortDescription}</p>
           <p className="mt-3 text-xs text-muted">
