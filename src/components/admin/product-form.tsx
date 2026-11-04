@@ -247,7 +247,7 @@ export function AdminProductForm() {
         categorySlug: string;
       }>(`/api/admin/import/amazon?code=${encodeURIComponent(code)}`);
       const category =
-        categories.find((item) => item.slug === found.categorySlug) ?? categories.find((item) => item.slug === "miscellaneous");
+        categories.find((item) => item.slug === found.categorySlug) ?? categories.find((item) => item.slug === "mixed-households");
       setForm((current) => ({
         ...current,
         name: found.name,

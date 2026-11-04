@@ -8,7 +8,6 @@ import { CatalogLayout, type CatalogFacets } from "@/components/storefront/catal
 import { Logo } from "@/components/brand/logo";
 import { DeployRefreshBanner } from "@/components/storefront/deploy-refresh";
 import { HomeHero } from "@/components/storefront/hero";
-import { CategoryCatalog } from "@/components/storefront/category-catalog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Label, PasswordInput, Select, Textarea, FieldError } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/feedback";
@@ -87,13 +86,12 @@ function HomePage() {
   return (
     <div>
       <HomeHero
-        title={hero?.title ?? "Wholesale clearance from our warehouse."}
+        title={hero?.title ?? "Brand-name stock, cleared at warehouse prices."}
         body={hero?.body}
         ctaLabel={hero?.ctaLabel}
         ctaHref={hero?.ctaHref}
         categories={data.categories}
       />
-      <CategoryCatalog categories={data.categories} />
       {data.collections.newArrivals.length ? (
         <section className="container-page pb-16">
           <h2 className="mb-8 font-display text-3xl sm:text-4xl">New arrivals</h2>

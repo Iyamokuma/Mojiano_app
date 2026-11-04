@@ -147,13 +147,12 @@ var UNSPLASH_REPLACEMENTS = {
   "photo-1483985988355-763728e1935b": "photo-1489987707025-afc232f7aed0",
   "photo-1555041469-a586c61ea9bc": "photo-1586023492125-27b2c045efd7"
 };
-var CATEGORY_IMAGE_OVERRIDES = {
-  "christmas-halloween": "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=1200&q=80",
-  "diy-auto": "https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=1200&q=80",
-  "mixed-households": "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=80",
-  miscellaneous: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80",
-  "fashion-beauty": "https://images.unsplash.com/photo-1489987707025-afc232f7aed0?auto=format&fit=crop&w=1200&q=80",
-  "furniture-sofas": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1200&q=80"
+var DEPARTMENT_IMAGES = {
+  "toys-nursery": "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=1200&q=80",
+  "fashion-beauty": "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80",
+  "christmas-halloween": "https://images.unsplash.com/photo-1606830733744-0ad778449672?auto=format&fit=crop&w=1200&q=80",
+  "audio-tv": "https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=1200&q=80",
+  "mixed-households": "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?auto=format&fit=crop&w=1200&q=80"
 };
 function resolveImageUrl(url2) {
   let next = url2;
@@ -163,7 +162,7 @@ function resolveImageUrl(url2) {
   return next;
 }
 function resolveCategoryImage(slug, image) {
-  if (CATEGORY_IMAGE_OVERRIDES[slug]) return CATEGORY_IMAGE_OVERRIDES[slug];
+  if (DEPARTMENT_IMAGES[slug]) return DEPARTMENT_IMAGES[slug];
   if (!image) return image ?? null;
   return resolveImageUrl(image);
 }
@@ -641,24 +640,14 @@ var AmazonImportError = class extends Error {
 };
 var CATEGORY_RULES = [
   [/christmas|halloween|easter|seasonal|party supplies|festive/i, "christmas-halloween"],
-  [/jewellery|jewelry|watches/i, "jewellery-watches"],
-  [/furniture|sofa|mattress/i, "furniture-sofas"],
-  [/large appliances|washing machine|dishwasher|fridge|freezer|tumble dryer|cooker/i, "white-goods"],
   [/television|home cinema|\btv\b|audio|headphones|speakers|hi-fi|radio/i, "audio-tv"],
   [/toys|games|baby|nursery/i, "toys-nursery"],
-  [/bedding|bed linen|towels|curtains|cushions|blankets|rugs|textiles/i, "household-textiles"],
-  [/kitchen|cookware|bakeware|tableware|dining/i, "kitchenware"],
-  [/garden|outdoor living|barbecue|bbq|pool/i, "summer-stock"],
-  [/sports|fitness|camping|cycling|outdoors/i, "sports-leisure"],
-  [/diy|tools|automotive|car |motorbike|hardware/i, "diy-auto"],
-  [/fashion|clothing|shoes|handbags|luggage|beauty|cosmetics|fragrance|personal care|hair/i, "fashion-beauty"],
-  [/electronics|computers|phones|small appliances|lighting|camera|electrical/i, "electrical"],
-  [/home|household|cleaning|pet supplies|storage|bathroom|grocery|health/i, "mixed-households"]
+  [/fashion|clothing|shoes|handbags|luggage|jewellery|jewelry|watches|beauty|cosmetics|fragrance|personal care|hair/i, "fashion-beauty"]
 ];
 function matchCategory(breadcrumb, title) {
   for (const [pattern, slug] of CATEGORY_RULES) if (pattern.test(breadcrumb)) return slug;
   for (const [pattern, slug] of CATEGORY_RULES) if (pattern.test(title)) return slug;
-  return "miscellaneous";
+  return "mixed-households";
 }
 function toPence(price) {
   if (!price || typeof price.value !== "number" || price.value <= 0) return null;

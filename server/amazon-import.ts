@@ -52,30 +52,20 @@ type RainforestResponse = {
 };
 
 /**
- * Amazon UK breadcrumb → shop category slug. Checked in order against the whole
- * breadcrumb, so the more specific rules come first.
+ * Amazon UK breadcrumb → one of the shop's five departments. Checked in order against
+ * the whole breadcrumb, so the more specific rules come first; anything else is Mixed Households.
  */
 const CATEGORY_RULES: [RegExp, string][] = [
   [/christmas|halloween|easter|seasonal|party supplies|festive/i, "christmas-halloween"],
-  [/jewellery|jewelry|watches/i, "jewellery-watches"],
-  [/furniture|sofa|mattress/i, "furniture-sofas"],
-  [/large appliances|washing machine|dishwasher|fridge|freezer|tumble dryer|cooker/i, "white-goods"],
   [/television|home cinema|\btv\b|audio|headphones|speakers|hi-fi|radio/i, "audio-tv"],
   [/toys|games|baby|nursery/i, "toys-nursery"],
-  [/bedding|bed linen|towels|curtains|cushions|blankets|rugs|textiles/i, "household-textiles"],
-  [/kitchen|cookware|bakeware|tableware|dining/i, "kitchenware"],
-  [/garden|outdoor living|barbecue|bbq|pool/i, "summer-stock"],
-  [/sports|fitness|camping|cycling|outdoors/i, "sports-leisure"],
-  [/diy|tools|automotive|car |motorbike|hardware/i, "diy-auto"],
-  [/fashion|clothing|shoes|handbags|luggage|beauty|cosmetics|fragrance|personal care|hair/i, "fashion-beauty"],
-  [/electronics|computers|phones|small appliances|lighting|camera|electrical/i, "electrical"],
-  [/home|household|cleaning|pet supplies|storage|bathroom|grocery|health/i, "mixed-households"],
+  [/fashion|clothing|shoes|handbags|luggage|jewellery|jewelry|watches|beauty|cosmetics|fragrance|personal care|hair/i, "fashion-beauty"],
 ];
 
 export function matchCategory(breadcrumb: string, title: string) {
   for (const [pattern, slug] of CATEGORY_RULES) if (pattern.test(breadcrumb)) return slug;
   for (const [pattern, slug] of CATEGORY_RULES) if (pattern.test(title)) return slug;
-  return "miscellaneous";
+  return "mixed-households";
 }
 
 function toPence(price: RainforestPrice | undefined) {

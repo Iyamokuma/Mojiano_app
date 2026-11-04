@@ -13,66 +13,27 @@ const UNSPLASH_REPLACEMENTS: Record<string, string> = {
   "photo-1555041469-a586c61ea9bc": "photo-1586023492125-27b2c045efd7",
 };
 
-/** Single continuous hero video — one file, five arch windows in `HomeHero`. */
-export const HERO_WAREHOUSE_VIDEO = "/videos/warehouse-hero.mp4";
+/** Homepage hero film: stock checked in the warehouse, an order packed, a parcel handed to a customer. */
+export const HERO_WAREHOUSE_VIDEO = "/videos/mojiano-hero.mp4";
 
-export const HERO_WAREHOUSE_VIDEO_POSTER =
-  "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1920&q=80";
+export const HERO_WAREHOUSE_VIDEO_POSTER = "/videos/mojiano-hero-poster.jpg";
 
-/** Hero arches: warehouse, pallets, and packed stock — not lifestyle shoots. */
+/** The shop's five departments, in the order the homepage shows them. */
 export const HERO_FEATURED_CATEGORY_SLUGS = [
-  "white-goods",
-  "household-textiles",
-  "electrical",
-  "kitchenware",
+  "toys-nursery",
+  "fashion-beauty",
+  "christmas-halloween",
+  "audio-tv",
   "mixed-households",
 ] as const;
 
-const HERO_ARCH_IMAGES: Record<string, string> = {
-  "white-goods":
-    "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80",
-  "household-textiles":
-    "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=900&q=80",
-  electrical:
-    "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?auto=format&fit=crop&w=900&q=80",
-  kitchenware:
-    "https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=900&q=80",
-  "mixed-households":
-    "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=900&q=80",
-  "audio-tv":
-    "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=900&q=80",
-  miscellaneous:
-    "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=900&q=80",
-  "diy-auto":
-    "https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=900&q=80",
-  "sports-leisure":
-    "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=900&q=80",
+const DEPARTMENT_IMAGES: Record<string, string> = {
+  "toys-nursery": "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=1200&q=80",
+  "fashion-beauty": "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80",
   "christmas-halloween":
-    "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=900&q=80",
-  "fashion-beauty":
-    "https://images.unsplash.com/photo-1489987707025-afc232f7aed0?auto=format&fit=crop&w=900&q=80",
-  "furniture-sofas":
-    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=900&q=80",
-  "jewellery-watches":
-    "https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=900&q=80",
-  "summer-stock":
-    "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=900&q=80",
-  "toys-nursery":
-    "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=900&q=80",
-};
-
-const CATEGORY_IMAGE_OVERRIDES: Record<string, string> = {
-  "christmas-halloween":
-    "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=1200&q=80",
-  "diy-auto": "https://images.unsplash.com/photo-1530124566582-a618bc2615dc?auto=format&fit=crop&w=1200&q=80",
-  "mixed-households":
-    "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=80",
-  miscellaneous:
-    "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80",
-  "fashion-beauty":
-    "https://images.unsplash.com/photo-1489987707025-afc232f7aed0?auto=format&fit=crop&w=1200&q=80",
-  "furniture-sofas":
-    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1606830733744-0ad778449672?auto=format&fit=crop&w=1200&q=80",
+  "audio-tv": "https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=1200&q=80",
+  "mixed-households": "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?auto=format&fit=crop&w=1200&q=80",
 };
 
 export function resolveImageUrl(url: string) {
@@ -91,13 +52,13 @@ export function compactImageUrl(url: string, width = 720) {
 }
 
 export function resolveCategoryImage(slug: string, image: string | null | undefined) {
-  if (CATEGORY_IMAGE_OVERRIDES[slug]) return CATEGORY_IMAGE_OVERRIDES[slug];
+  if (DEPARTMENT_IMAGES[slug]) return DEPARTMENT_IMAGES[slug];
   if (!image) return image ?? null;
   return resolveImageUrl(image);
 }
 
 export function heroArchImage(slug: string, fallbackImage?: string | null) {
-  const raw = HERO_ARCH_IMAGES[slug] || resolveCategoryImage(slug, fallbackImage) || fallbackImage || "";
+  const raw = resolveCategoryImage(slug, fallbackImage) || fallbackImage || "";
   return raw ? compactImageUrl(raw, 900) : "";
 }
 

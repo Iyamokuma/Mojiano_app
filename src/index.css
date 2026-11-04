@@ -3,6 +3,8 @@
 @theme {
   --font-sans: "Satoshi", "Segoe UI", sans-serif;
   --font-display: "Satoshi", "Segoe UI", sans-serif;
+  /* Editorial serif for the homepage hero, echoing the logo's high-contrast letterforms. */
+  --font-serif: "Cormorant Garamond", "Cormorant", Georgia, serif;
 
   --color-canvas: #fff8f4;
   --color-canvas-warm: #fbeee6;
