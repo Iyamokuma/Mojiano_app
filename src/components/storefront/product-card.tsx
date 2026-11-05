@@ -166,9 +166,9 @@ function QuickView({
   );
 }
 
-export function ProductGrid({ products }: { products: ProductCardData[] }) {
+export function ProductGrid({ products, className }: { products: ProductCardData[]; className?: string }) {
   return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:gap-x-6 md:grid-cols-3 xl:grid-cols-4">
+    <div className={cn("grid grid-cols-2 gap-x-4 gap-y-10 sm:gap-x-6 md:grid-cols-3 xl:grid-cols-4", className)}>
       {products.map((product) => (
         <ProductCard key={product.id} product={product} />
       ))}

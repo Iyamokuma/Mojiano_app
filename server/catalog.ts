@@ -234,6 +234,25 @@ export async function getRelatedProducts(productId: string, categoryId: string) 
   return products.map((product) => withFixedProductImages(product));
 }
 
+/** One in-stock product with a photo from each visible department, featured lines first. */
+async function getDepartmentPicks() {
+  const categories = await prisma.category.findMany({
+    where: { isVisible: true, deletedAt: null, parentId: null },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true },
+  });
+  const picks = await Promise.all(
+    categories.map((category) =>
+      prisma.product.findFirst({
+        where: { categoryId: category.id, isActive: true, deletedAt: null, stockQuantity: { gt: 0 }, images: { some: {} } },
+        orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
+        select: productCardSelect,
+      }),
+    ),
+  );
+  return picks.filter((product): product is NonNullable<typeof product> => product !== null);
+}
+
 export async function getHomeCollections() {
   const select = productCardSelect;
   const [featured, clearance, newArrivals, bestSellers] = await Promise.all([
@@ -248,6 +267,7 @@ export async function getHomeCollections() {
     prisma.product.findMany({ where: { bestSeller: true, isActive: true, deletedAt: null }, take: 8, select }),
   ]);
   return {
+    departmentPicks: (await getDepartmentPicks()).map((product) => withFixedProductImages(product)),
     featured: featured.map((product) => withFixedProductImages(product)),
     clearance: clearance.map((product) => withFixedProductImages(product)),
     newArrivals: newArrivals.map((product) => withFixedProductImages(product)),

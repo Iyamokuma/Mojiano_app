@@ -13,7 +13,7 @@ const UNSPLASH_REPLACEMENTS: Record<string, string> = {
   "photo-1555041469-a586c61ea9bc": "photo-1586023492125-27b2c045efd7",
 };
 
-/** Homepage hero film: stock checked in the warehouse, an order packed, a parcel handed to a customer. */
+/** Homepage hero film seen through the five arches: boxed stock on a conveyor, a fulfilment centre, a container port at night. */
 export const HERO_WAREHOUSE_VIDEO = "/videos/mojiano-hero.mp4";
 
 export const HERO_WAREHOUSE_VIDEO_POSTER = "/videos/mojiano-hero-poster.jpg";

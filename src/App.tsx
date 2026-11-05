@@ -8,6 +8,7 @@ import { CatalogLayout, type CatalogFacets } from "@/components/storefront/catal
 import { Logo } from "@/components/brand/logo";
 import { DeployRefreshBanner } from "@/components/storefront/deploy-refresh";
 import { HomeHero } from "@/components/storefront/hero";
+import { CategoryCatalog } from "@/components/storefront/category-catalog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Label, PasswordInput, Select, Textarea, FieldError } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/feedback";
@@ -58,7 +59,12 @@ function HomePage() {
   const [data, setData] = useState<{
     content: { id: string; key: string; title: string; body: string; image: string | null; ctaLabel: string; ctaHref: string }[];
     categories: { id: string; name: string; slug: string; image: string | null }[];
-    collections: { featured: ProductCardData[]; newArrivals: ProductCardData[]; bestSellers: ProductCardData[] };
+    collections: {
+      departmentPicks?: ProductCardData[];
+      featured: ProductCardData[];
+      newArrivals: ProductCardData[];
+      bestSellers: ProductCardData[];
+    };
   } | null>(() => peekApi("/api/home") ?? null);
   const [failed, setFailed] = useState(false);
 
@@ -86,12 +92,19 @@ function HomePage() {
   return (
     <div>
       <HomeHero
-        title={hero?.title ?? "Brand-name stock, cleared at warehouse prices."}
+        title={hero?.title ?? "Wholesale clearance from our warehouse."}
         body={hero?.body}
         ctaLabel={hero?.ctaLabel}
         ctaHref={hero?.ctaHref}
         categories={data.categories}
       />
+      <CategoryCatalog categories={data.categories} />
+      {data.collections.departmentPicks?.length ? (
+        <section className="container-page pb-16">
+          <h2 className="mb-8 font-display text-3xl sm:text-4xl">One from every department</h2>
+          <ProductGrid products={data.collections.departmentPicks} className="lg:grid-cols-5 xl:grid-cols-5" />
+        </section>
+      ) : null}
       {data.collections.newArrivals.length ? (
         <section className="container-page pb-16">
           <h2 className="mb-8 font-display text-3xl sm:text-4xl">New arrivals</h2>
